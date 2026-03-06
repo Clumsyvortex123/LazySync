@@ -55,6 +55,36 @@ type ProcessInfo struct {
 	Cmd        *exec.Cmd          // reference to the running command for SIGKILL
 }
 
+// remoteDirectoryCache caches remote directory listings to avoid repeated SSH calls.
+// Shared via pointer so it survives Bubble Tea model copies.
+type remoteDirectoryCache struct {
+	mu      sync.Mutex
+	entries map[string][]*commands.RemoteEntry
+}
+
+func newRemoteDirectoryCache() *remoteDirectoryCache {
+	return &remoteDirectoryCache{entries: make(map[string][]*commands.RemoteEntry)}
+}
+
+func (c *remoteDirectoryCache) Get(path string) ([]*commands.RemoteEntry, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.entries[path]
+	return e, ok
+}
+
+func (c *remoteDirectoryCache) Set(path string, entries []*commands.RemoteEntry) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.entries[path] = entries
+}
+
+func (c *remoteDirectoryCache) Clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.entries = make(map[string][]*commands.RemoteEntry)
+}
+
 // Model is the main Bubble Tea model
 type Model struct {
 	// Dimensions
@@ -101,7 +131,9 @@ type Model struct {
 	hostsScroll    int     // scroll offset for hosts panel
 	localScroll    int     // scroll offset for local file browser
 	remoteScroll   int     // scroll offset for remote file browser
-	isLoadingRemote bool   // loading state for remote files
+	isLoadingRemote  bool                   // loading state for remote files
+	remoteCache      *remoteDirectoryCache  // shared cache for remote directory listings
+	remoteCacheHost  string                 // hostname the cache belongs to
 
 	// SCP state
 	scpSourceIsLocal        bool                      // true if source is local
@@ -168,6 +200,7 @@ const (
 	DialogSyncOptions
 	DialogSyncConfirmCommand
 	DialogCreateFolder // create folder inline during dest selection
+	DialogHelp         // keybindings help popup
 )
 
 // NewModel creates a new Bubble Tea model
@@ -260,6 +293,7 @@ func NewModel(
 		scpMarkedFilePaths: make(map[string]bool),
 		activeProcesses:    make(map[string]*ProcessInfo),
 		hostReachability:   make(map[string]bool),
+		remoteCache:        newRemoteDirectoryCache(),
 		filePanelHeight:    10, // sensible default until first WindowSizeMsg
 	}
 
@@ -294,11 +328,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if host, ok := m.sections[0].Items[m.selectedInSection[0]].Data.(*commands.SSHHost); ok {
 					m.scpSelectedHost = host
 					m.scpMarkedFilePaths = make(map[string]bool)
+					m.invalidateRemoteCacheIfHostChanged(host)
 					m.dialogState = DialogSCPConfirm
-					m.log.WithFields(map[string]interface{}{
-						"host": host.Hostname,
-						"user": host.User,
-					}).Info("Starting SCP with selected host")
+					if len(m.remoteFiles) == 0 {
+						return m, m.navigateRemote(m.remotePath)
+					}
 					return m, nil
 				}
 			}
@@ -308,6 +342,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.sections[0].Items) > 0 && m.selectedInSection[0] < len(m.sections[0].Items) {
 				if host, ok := m.sections[0].Items[m.selectedInSection[0]].Data.(*commands.SSHHost); ok {
 					m.scpSelectedHost = host
+					m.invalidateRemoteCacheIfHostChanged(host)
 					m.syncLocalPath = m.localPath
 					m.syncRemotePath = m.remotePath
 					m.syncNoWatch = false
@@ -315,9 +350,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.syncOptionsCursor = 0
 					m.syncExecCommand = ""
 					m.dialogState = DialogSyncConfirm
+					if len(m.remoteFiles) == 0 {
+						return m, m.navigateRemote(m.remotePath)
+					}
 					return m, nil
 				}
 			}
+			return m, nil
+		case "?":
+			m.dialogState = DialogHelp
 			return m, nil
 		}
 
@@ -384,12 +425,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "f":
 			// Fetch remote files when in SSH hosts section
 			if m.focusedSection == 0 && len(m.sections[0].Items) > 0 {
-				m.isLoadingRemote = true
-				// Initialize remotePath to /home if not set
-				if m.remotePath == "" {
-					m.remotePath = "/home"
+				if host := m.getSelectedHost(); host != nil {
+					m.remoteCacheHost = fmt.Sprintf("%s@%s:%d", host.User, host.Hostname, host.Port)
 				}
-				return m, m.loadRemoteFilesSection()
+				m.remoteCache.Clear()
+				return m, m.navigateRemote("/")
 			}
 			return m, nil
 
@@ -411,6 +451,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				"user":     "",
 				"port":     "22",
 				"keypath":  "",
+			}
+			return m, nil
+
+		case "o":
+			// Open SSH terminal for selected host
+			if m.focusedSection == 0 && len(m.sections[0].Items) > 0 {
+				idx := m.selectedInSection[0]
+				if idx < len(m.sections[0].Items) {
+					if host, ok := m.sections[0].Items[idx].Data.(*commands.SSHHost); ok {
+						sshTarget := fmt.Sprintf("%s@%s", host.User, host.Hostname)
+						sshArgs := "ssh"
+						if host.KeyPath != "" {
+							sshArgs += fmt.Sprintf(" -i %s", host.KeyPath)
+						}
+						if host.Port != 0 && host.Port != 22 {
+							sshArgs += fmt.Sprintf(" -p %d", host.Port)
+						}
+						sshArgs += " " + sshTarget
+						// Set terminal title to host name, then exec ssh
+						shellCmd := fmt.Sprintf(`echo -ne "\033]0;%s\007"; exec %s`, host.Name, sshArgs)
+						cmd := exec.Command("gnome-terminal", "--", "bash", "-c", shellCmd)
+						if err := cmd.Start(); err != nil {
+							m.appendConsole(fmt.Sprintf("Failed to open terminal: %v", err))
+						} else {
+							m.appendConsole(fmt.Sprintf("Opened SSH terminal to %s", sshTarget))
+						}
+					}
+				}
 			}
 			return m, nil
 
@@ -461,10 +529,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case RemoteFilesLoadedMsg:
-		m.remoteFiles = msg
-		m.sections[2].Items = m.convertRemoteFilesToItems(msg)
-		m.sections[2].IsLoading = false
 		m.isLoadingRemote = false
+		m.sections[2].IsLoading = false
+		if msg.Err != nil {
+			m.appendConsole(fmt.Sprintf("Remote fetch failed (%s): %v", msg.Path, msg.Err))
+			// Keep whatever was showing before
+			m.updateDetailPanel()
+			return m, nil
+		}
+		entries := msg.Entries
+		if entries == nil {
+			entries = make([]*commands.RemoteEntry, 0)
+		}
+		m.remoteFiles = entries
+		m.sections[2].Items = m.convertRemoteFilesToItems(entries)
+		// Store in cache for instant revisit
+		m.remoteCache.Set(msg.Path, entries)
 		m.updateDetailPanel()
 		return m, nil
 
@@ -518,6 +598,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ErrorMsg:
 		m.currentError = string(msg)
 		m.isLoading = false
+		m.isLoadingRemote = false
 		return m, tea.Tick(time.Second*5, func(time.Time) tea.Msg {
 			return ClearErrorMsg{}
 		})
@@ -702,41 +783,47 @@ func (m *Model) navigateLocalDirectory(targetPath string) {
 	m.localScroll = 0           // reset scroll on directory change
 }
 
+func (m Model) getSelectedHost() *commands.SSHHost {
+	if len(m.sections[0].Items) == 0 {
+		return nil
+	}
+	idx := m.selectedInSection[0]
+	if idx >= len(m.sections[0].Items) {
+		return nil
+	}
+	host, ok := m.sections[0].Items[idx].Data.(*commands.SSHHost)
+	if !ok {
+		return nil
+	}
+	return host
+}
+
+// loadRemoteFilesSection fetches remote files for the current remotePath.
+// Uses cache when available; otherwise SSH ls -la. Always returns RemoteFilesLoadedMsg.
 func (m Model) loadRemoteFilesSection() tea.Cmd {
+	targetPath := m.remotePath
+	if targetPath == "" {
+		targetPath = "/"
+	}
+	// Cache hit — return instantly
+	if cached, ok := m.remoteCache.Get(targetPath); ok {
+		return func() tea.Msg {
+			return RemoteFilesLoadedMsg{Path: targetPath, Entries: cached}
+		}
+	}
+	// Cache miss — fetch via SSH
+	host := m.getSelectedHost()
+	if host == nil {
+		return func() tea.Msg {
+			return RemoteFilesLoadedMsg{Path: targetPath, Entries: nil, Err: fmt.Errorf("no host selected")}
+		}
+	}
+	hostCopy := *host
 	return func() tea.Msg {
-		// Load remote files - requires a selected host
-		if len(m.sections[0].Items) == 0 {
-			// No host selected
-			return RemoteFilesLoadedMsg(make([]*commands.RemoteEntry, 0))
-		}
-
-		selectedHostIdx := m.selectedInSection[0]
-		if selectedHostIdx >= len(m.sections[0].Items) {
-			return RemoteFilesLoadedMsg(make([]*commands.RemoteEntry, 0))
-		}
-
-		hostItem := m.sections[0].Items[selectedHostIdx]
-		host, ok := hostItem.Data.(*commands.SSHHost)
-		if !ok {
-			return ErrorMsg("Invalid host data")
-		}
-
-		// Use m.remotePath if set, otherwise use default
-		targetPath := m.remotePath
-		if targetPath == "" {
-			targetPath = "/home"
-		}
-
-		// Load files from remote host (using context with timeout)
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-
-		entries, err := commands.GetRemoteEntries(ctx, host, targetPath)
-		if err != nil {
-			m.log.WithError(err).Warn("failed to load remote files")
-			return ErrorMsg(fmt.Sprintf("Failed to load remote files: %v", err))
-		}
-		return RemoteFilesLoadedMsg(entries)
+		entries, err := commands.GetRemoteEntries(ctx, &hostCopy, targetPath)
+		return RemoteFilesLoadedMsg{Path: targetPath, Entries: entries, Err: err}
 	}
 }
 
@@ -888,15 +975,13 @@ func (m Model) handleFileBrowserInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 		} else if m.focusedSection == 2 {
-			// Remote file browser - auto-fetch when entering directory
+			// Remote file browser - enter directory
 			if len(m.remoteFiles) > 0 {
 				selected := m.selectedInSection[2]
 				if selected < len(m.remoteFiles) {
 					file := m.remoteFiles[selected]
 					if file.IsDir {
-						m.navigateRemoteDirectory(file.Path)
-						m.isLoadingRemote = true
-						return m, m.loadRemoteFilesSection()
+						return m, m.navigateRemote(file.Path)
 					}
 				}
 			}
@@ -906,23 +991,15 @@ func (m Model) handleFileBrowserInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "backspace", "h":
 		// Go to parent directory
 		if m.focusedSection == 1 {
-			// Local file browser
 			parentPath := filepath.Dir(m.localPath)
-			if parentPath != m.localPath { // Check if we're not at root
+			if parentPath != m.localPath {
 				m.navigateLocalDirectory(parentPath)
 				return m, m.reloadLocalFiles()
 			}
 		} else if m.focusedSection == 2 {
-			// Remote file browser
 			parentPath := filepath.Dir(m.remotePath)
-			if parentPath != m.remotePath && parentPath != "/" {
-				m.navigateRemoteDirectory(parentPath)
-				m.isLoadingRemote = true
-				return m, m.loadRemoteFilesSection()
-			} else if parentPath == "/" {
-				m.navigateRemoteDirectory("/")
-				m.isLoadingRemote = true
-				return m, m.loadRemoteFilesSection()
+			if parentPath != m.remotePath {
+				return m, m.navigateRemote(parentPath)
 			}
 		}
 		return m, nil
@@ -937,14 +1014,8 @@ func (m Model) handleFileBrowserInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		} else if m.focusedSection == 2 {
 			parentPath := filepath.Dir(m.remotePath)
-			if parentPath != m.remotePath && parentPath != "/" {
-				m.navigateRemoteDirectory(parentPath)
-				m.isLoadingRemote = true
-				return m, m.loadRemoteFilesSection()
-			} else if parentPath == "/" {
-				m.navigateRemoteDirectory("/")
-				m.isLoadingRemote = true
-				return m, m.loadRemoteFilesSection()
+			if parentPath != m.remotePath {
+				return m, m.navigateRemote(parentPath)
 			}
 		}
 		return m, nil
@@ -968,9 +1039,7 @@ func (m Model) handleFileBrowserInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if selected < len(m.remoteFiles) {
 					file := m.remoteFiles[selected]
 					if file.IsDir {
-						m.navigateRemoteDirectory(file.Path)
-						m.isLoadingRemote = true
-						return m, m.loadRemoteFilesSection()
+						return m, m.navigateRemote(file.Path)
 					}
 				}
 			}
@@ -992,15 +1061,27 @@ func (m Model) handleFileBrowserInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
-// navigateRemoteDirectory navigates to a subdirectory in the remote filesystem
-func (m *Model) navigateRemoteDirectory(targetPath string) {
-	m.remotePath = targetPath
-	m.selectedInSection[2] = 0 // reset selection on directory change
-	m.remoteScroll = 0         // reset scroll on directory change
+// navigateRemote sets the remote path, resets selection/scroll, marks loading,
+// and returns the command to fetch the listing. One call does everything.
+// invalidateRemoteCacheIfHostChanged clears cache and remote files when switching hosts.
+func (m *Model) invalidateRemoteCacheIfHostChanged(host *commands.SSHHost) {
+	hostKey := fmt.Sprintf("%s@%s:%d", host.User, host.Hostname, host.Port)
+	if hostKey != m.remoteCacheHost {
+		m.remoteCache.Clear()
+		m.remoteFiles = make([]*commands.RemoteEntry, 0)
+		m.sections[2].Items = nil
+		m.remoteCacheHost = hostKey
+		m.remotePath = "/home"
+	}
 }
 
-// reloadRemoteFiles reloads the current remote directory
-func (m Model) reloadRemoteFiles() tea.Cmd {
+func (m *Model) navigateRemote(targetPath string) tea.Cmd {
+	m.remotePath = targetPath
+	m.selectedInSection[2] = 0
+	m.remoteScroll = 0
+	m.remoteFiles = make([]*commands.RemoteEntry, 0)
+	m.sections[2].Items = nil
+	m.isLoadingRemote = true
 	return m.loadRemoteFilesSection()
 }
 
@@ -1039,6 +1120,11 @@ func (m Model) handleDialogInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleSyncConfirmCommandInput(msg)
 	case DialogCreateFolder:
 		return m.handleCreateFolderInput(msg)
+	case DialogHelp:
+		if msg.String() == "esc" || msg.String() == "?" {
+			m.dialogState = DialogNone
+		}
+		return m, nil
 	default:
 		return m, nil
 	}
@@ -1430,11 +1516,10 @@ func (m *Model) handleSCPSelectSourceInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 
 		// Auto-fetch remote files if source is remote
 		if !m.scpSourceIsLocal && len(m.remoteFiles) == 0 {
-			m.isLoadingRemote = true
 			if m.remotePath == "" {
 				m.remotePath = "/home"
 			}
-			return m, m.loadRemoteFilesSection()
+			return m, m.navigateRemote(m.remotePath)
 		}
 
 		return m, nil
@@ -1469,18 +1554,15 @@ func (m *Model) handleSCPSelectDestInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		// Load files from source if needed
 		if m.scpSourceIsLocal {
-			// Source is local - load local files if empty
 			if len(m.localFiles) == 0 {
 				return m, m.loadFilesSection()
 			}
 		} else {
-			// Source is remote - load remote files if empty
 			if len(m.remoteFiles) == 0 {
-				m.isLoadingRemote = true
 				if m.remotePath == "" {
 					m.remotePath = "/home"
 				}
-				return m, m.loadRemoteFilesSection()
+				return m, m.navigateRemote(m.remotePath)
 			}
 		}
 
@@ -1551,12 +1633,10 @@ func (m *Model) handleSCPSelectSourceFilesInput(msg tea.KeyMsg) (tea.Model, tea.
 			*currentPath = parentPath
 			*selectedIdx = 0
 			*scrollOffset = 0
-			// Reload files
 			if m.scpSourceIsLocal {
 				return m, m.reloadLocalFiles()
 			} else {
-				m.isLoadingRemote = true
-				return m, m.loadRemoteFilesSection()
+				return m, m.navigateRemote(parentPath)
 			}
 		}
 		return m, nil
@@ -1573,10 +1653,7 @@ func (m *Model) handleSCPSelectSourceFilesInput(msg tea.KeyMsg) (tea.Model, tea.
 		} else if remoteList, ok := files.([]*commands.RemoteEntry); ok {
 			if *selectedIdx < len(remoteList) && remoteList[*selectedIdx].IsDir {
 				*currentPath = remoteList[*selectedIdx].Path
-				*selectedIdx = 0
-				*scrollOffset = 0
-				m.isLoadingRemote = true
-				return m, m.loadRemoteFilesSection()
+				return m, m.navigateRemote(remoteList[*selectedIdx].Path)
 			}
 		}
 		return m, nil
@@ -1654,8 +1731,7 @@ func (m *Model) handleSCPSelectSourceFilesInput(msg tea.KeyMsg) (tea.Model, tea.
 
 		// Load dest files if needed
 		if m.scpSourceIsLocal && len(m.remoteFiles) == 0 {
-			m.isLoadingRemote = true
-			return m, m.loadRemoteFilesSection()
+			return m, m.navigateRemote(m.remotePath)
 		} else if !m.scpSourceIsLocal && len(m.localFiles) == 0 {
 			return m, m.loadFilesSection()
 		}
@@ -1736,12 +1812,11 @@ func (m *Model) handleSCPSelectDestPathInput(msg tea.KeyMsg) (tea.Model, tea.Cmd
 		if parentPath != *currentPath {
 			*currentPath = parentPath
 			m.scpSelectedDestPath = *currentPath
-			*selectedIdx = 0
-			*scrollOffset = 0
 			if m.scpSourceIsLocal {
-				m.isLoadingRemote = true
-				return m, m.loadRemoteFilesSection()
+				return m, m.navigateRemote(parentPath)
 			} else {
+				*selectedIdx = 0
+				*scrollOffset = 0
 				return m, m.reloadLocalFiles()
 			}
 		}
@@ -1761,10 +1836,7 @@ func (m *Model) handleSCPSelectDestPathInput(msg tea.KeyMsg) (tea.Model, tea.Cmd
 			if *selectedIdx < len(remoteList) && remoteList[*selectedIdx].IsDir {
 				*currentPath = remoteList[*selectedIdx].Path
 				m.scpSelectedDestPath = *currentPath
-				*selectedIdx = 0
-				*scrollOffset = 0
-				m.isLoadingRemote = true
-				return m, m.loadRemoteFilesSection()
+				return m, m.navigateRemote(remoteList[*selectedIdx].Path)
 			}
 		}
 		return m, nil
@@ -2067,15 +2139,14 @@ func (m *Model) handleSyncSelectLocalPathInput(msg tea.KeyMsg) (tea.Model, tea.C
 			if file.IsDir {
 				m.syncLocalPath = file.Path
 				m.dialogState = DialogSyncSelectRemotePath
-				m.selectedInSection[2] = 0
-				m.remoteScroll = 0
 				if len(m.remoteFiles) == 0 {
-					m.isLoadingRemote = true
 					if m.remotePath == "" {
 						m.remotePath = "/home"
 					}
-					return m, m.loadRemoteFilesSection()
+					return m, m.navigateRemote(m.remotePath)
 				}
+				m.selectedInSection[2] = 0
+				m.remoteScroll = 0
 				return m, nil
 			}
 		}
@@ -2084,18 +2155,15 @@ func (m *Model) handleSyncSelectLocalPathInput(msg tea.KeyMsg) (tea.Model, tea.C
 	case "enter":
 		// Confirm current local directory as sync source
 		m.syncLocalPath = m.localPath
-		// Proceed to remote path selection
 		m.dialogState = DialogSyncSelectRemotePath
-		m.selectedInSection[2] = 0
-		m.remoteScroll = 0
-		// Load remote files if needed
 		if len(m.remoteFiles) == 0 {
-			m.isLoadingRemote = true
 			if m.remotePath == "" {
 				m.remotePath = "/home"
 			}
-			return m, m.loadRemoteFilesSection()
+			return m, m.navigateRemote(m.remotePath)
 		}
+		m.selectedInSection[2] = 0
+		m.remoteScroll = 0
 		return m, nil
 	}
 	return m, nil
@@ -2142,9 +2210,7 @@ func (m *Model) handleSyncSelectRemotePathInput(msg tea.KeyMsg) (tea.Model, tea.
 	case "left", "backspace", "h":
 		parentPath := filepath.Dir(m.remotePath)
 		if parentPath != m.remotePath {
-			m.navigateRemoteDirectory(parentPath)
-			m.isLoadingRemote = true
-			return m, m.loadRemoteFilesSection()
+			return m, m.navigateRemote(parentPath)
 		}
 		return m, nil
 
@@ -2152,9 +2218,7 @@ func (m *Model) handleSyncSelectRemotePathInput(msg tea.KeyMsg) (tea.Model, tea.
 		if len(m.remoteFiles) > 0 && m.selectedInSection[2] < len(m.remoteFiles) {
 			file := m.remoteFiles[m.selectedInSection[2]]
 			if file.IsDir {
-				m.navigateRemoteDirectory(file.Path)
-				m.isLoadingRemote = true
-				return m, m.loadRemoteFilesSection()
+				return m, m.navigateRemote(file.Path)
 			}
 		}
 		return m, nil
@@ -2299,13 +2363,9 @@ func (m *Model) handleCreateFolderInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			host := m.scpSelectedHost
 			if host != nil {
 				cmd := m.createRemoteFolderCmd(host, newPath)
-				m.remotePath = newPath
 				m.syncRemotePath = newPath
-				m.selectedInSection[2] = 0
-				m.remoteScroll = 0
-				m.isLoadingRemote = true
 				m.dialogState = m.createFolderReturnTo
-				return m, tea.Batch(cmd, m.loadRemoteFilesSection())
+				return m, tea.Batch(cmd, m.navigateRemote(newPath))
 			}
 		} else {
 			// Create folder locally

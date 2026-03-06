@@ -48,12 +48,14 @@ go build -o lazyscpsync .
 | Key | Action |
 |-----|--------|
 | `Tab` | Switch panels |
+| `?` | Show keybindings help |
 | `s` | SCP transfer |
 | `l` | Live sync |
 | `z` | Active processes |
 | `a` | Add host |
 | `d` | Delete host |
 | `f` | Fetch remote files |
+| `o` | Open SSH terminal |
 | `b` | Back (in dialogs) |
 | `n` | New folder (in dest browsers) |
 | `.` | Kill selected processes |

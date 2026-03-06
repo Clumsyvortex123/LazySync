@@ -13,7 +13,11 @@ type FocusPrevSectionMsg struct{}
 // Data loading messages
 type HostsLoadedMsg []*commands.SSHHost
 type FilesLoadedMsg []*commands.FileEntry
-type RemoteFilesLoadedMsg []*commands.RemoteEntry
+type RemoteFilesLoadedMsg struct {
+	Path    string
+	Entries []*commands.RemoteEntry
+	Err     error
+}
 type SyncSessionsUpdatedMsg []*commands.SyncSession
 
 // Action messages
@@ -77,3 +81,4 @@ type ReachabilityTickMsg struct{}
 
 // Tick for periodic updates
 type TickMsg struct{}
+

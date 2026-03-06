@@ -69,13 +69,20 @@ go build -o lazyscpsync .
 |-----|--------|
 | `Tab` | Cycle focus between sections |
 | `Shift+Tab` | Cycle focus backwards |
+| `?` | Show keybindings help popup |
 | `q` / `Ctrl+C` | Quit |
 | `s` | Start SCP transfer dialog |
 | `l` | Start Live Sync dialog |
 | `z` | Show active processes (checkbox kill dialog) |
+
+### SSH Hosts Panel
+
+| Key | Action |
+|-----|--------|
 | `a` | Add new SSH host |
 | `d` | Delete selected host |
 | `f` | Fetch remote files for selected host |
+| `o` | Open SSH terminal to selected host |
 
 ### Navigation (Hosts / File Browsers)
 

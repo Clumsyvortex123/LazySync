@@ -10,6 +10,18 @@ import (
 	"lazyscpsync/pkg/commands"
 )
 
+// humanSize formats a byte count into a human-readable string (B, KB, MB, GB).
+func humanSize(size int64) string {
+	if size < 1024 {
+		return fmt.Sprintf("%dB", size)
+	} else if size < 1024*1024 {
+		return fmt.Sprintf("%.1fKB", float64(size)/1024)
+	} else if size < 1024*1024*1024 {
+		return fmt.Sprintf("%.1fMB", float64(size)/(1024*1024))
+	}
+	return fmt.Sprintf("%.1fGB", float64(size)/(1024*1024*1024))
+}
+
 // renderMainView renders the main TUI layout fitted exactly to terminal size using lipgloss.
 func (m Model) renderMainView() string {
 	W := m.width
@@ -25,7 +37,7 @@ func (m Model) renderMainView() string {
 	footerStyle := lipgloss.NewStyle().
 		Width(W).
 		Foreground(lipgloss.Color(ColorCyan))
-	footer := footerStyle.Render(" Tab:Switch ↑↓:Nav ←→:Dir a:Add f:Fetch s:SCP l:Sync z:Procs q:Quit")
+	footer := footerStyle.Render(" Tab:Switch ↑↓:Nav ←→:Dir a:Add f:Fetch o:SSH s:SCP l:Sync z:Procs ?:Help q:Quit")
 
 	// Body fills remaining height
 	bodyH := H - 2
@@ -290,6 +302,8 @@ func (m Model) renderDialog() string {
 		return m.renderSyncConfirmCommandDialogOverlay(mainView)
 	case DialogCreateFolder:
 		return m.renderCreateFolderDialogOverlay(mainView)
+	case DialogHelp:
+		return m.renderHelpDialogOverlay(mainView)
 	default:
 		return mainView
 	}
@@ -538,15 +552,17 @@ func (m Model) renderSCPSelectSourceFilesDialogOverlay(mainView string) string {
 				mark = "✓ "
 			}
 			icon := "📄"
+			sizeStr := humanSize(file.Size)
 			if file.IsDir {
 				icon = "📁"
+				sizeStr = ""
 			}
 
 			if i == selectedIdx {
-				line := fmt.Sprintf("▶ %s %s%s", mark, icon, file.Name)
+				line := fmt.Sprintf("▶ %s %s%-30s %s", mark, icon, file.Name, sizeStr)
 				lines = append(lines, NewStyle().GreenBg().Bold().Render(line))
 			} else {
-				line := fmt.Sprintf("  %s %s%s", mark, icon, file.Name)
+				line := fmt.Sprintf("  %s %s%-30s %s", mark, icon, file.Name, sizeStr)
 				lines = append(lines, NewStyle().CyanForeground().Render(line))
 			}
 			}
@@ -567,15 +583,17 @@ func (m Model) renderSCPSelectSourceFilesDialogOverlay(mainView string) string {
 				mark = "✓ "
 			}
 			icon := "📄"
+			sizeStr := humanSize(file.Size)
 			if file.IsDir {
 				icon = "📁"
+				sizeStr = ""
 			}
 
 			if i == selectedIdx {
-				line := fmt.Sprintf("▶ %s %s%s", mark, icon, file.Name)
+				line := fmt.Sprintf("▶ %s %s%-30s %s", mark, icon, file.Name, sizeStr)
 				lines = append(lines, NewStyle().GreenBg().Bold().Render(line))
 			} else {
-				line := fmt.Sprintf("  %s %s%s", mark, icon, file.Name)
+				line := fmt.Sprintf("  %s %s%-30s %s", mark, icon, file.Name, sizeStr)
 				lines = append(lines, NewStyle().CyanForeground().Render(line))
 			}
 			}
@@ -645,15 +663,17 @@ func (m Model) renderSCPSelectDestPathDialogOverlay(mainView string) string {
 		for i := scrollOffset; i < endIdx; i++ {
 			file := localList[i]
 			icon := "📄"
+			sizeStr := humanSize(file.Size)
 			if file.IsDir {
 				icon = "📁"
+				sizeStr = ""
 			}
 
 			if i == selectedIdx {
-				line := fmt.Sprintf("▶ %s %s", icon, file.Name)
+				line := fmt.Sprintf("▶ %s %-30s %s", icon, file.Name, sizeStr)
 				lines = append(lines, NewStyle().GreenBg().Bold().Render(line))
 			} else {
-				line := fmt.Sprintf("  %s %s", icon, file.Name)
+				line := fmt.Sprintf("  %s %-30s %s", icon, file.Name, sizeStr)
 				lines = append(lines, NewStyle().CyanForeground().Render(line))
 			}
 		}
@@ -671,15 +691,17 @@ func (m Model) renderSCPSelectDestPathDialogOverlay(mainView string) string {
 		for i := scrollOffset; i < endIdx; i++ {
 			file := remoteList[i]
 			icon := "📄"
+			sizeStr := humanSize(file.Size)
 			if file.IsDir {
 				icon = "📁"
+				sizeStr = ""
 			}
 
 			if i == selectedIdx {
-				line := fmt.Sprintf("▶ %s %s", icon, file.Name)
+				line := fmt.Sprintf("▶ %s %-30s %s", icon, file.Name, sizeStr)
 				lines = append(lines, NewStyle().GreenBg().Bold().Render(line))
 			} else {
-				line := fmt.Sprintf("  %s %s", icon, file.Name)
+				line := fmt.Sprintf("  %s %-30s %s", icon, file.Name, sizeStr)
 				lines = append(lines, NewStyle().CyanForeground().Render(line))
 			}
 		}
@@ -936,14 +958,16 @@ func (m Model) renderSyncSelectLocalPathDialogOverlay(mainView string) string {
 		for i := scrollOffset; i < endIdx; i++ {
 			file := m.localFiles[i]
 			icon := "📄"
+			sizeStr := humanSize(file.Size)
 			if file.IsDir {
 				icon = "📁"
+				sizeStr = ""
 			}
 			if i == m.selectedInSection[1] {
-				line := fmt.Sprintf("▶ %s %s", icon, file.Name)
+				line := fmt.Sprintf("▶ %s %-30s %s", icon, file.Name, sizeStr)
 				lines = append(lines, NewStyle().GreenBg().Bold().Render(line))
 			} else {
-				line := fmt.Sprintf("  %s %s", icon, file.Name)
+				line := fmt.Sprintf("  %s %-30s %s", icon, file.Name, sizeStr)
 				lines = append(lines, NewStyle().CyanForeground().Render(line))
 			}
 		}
@@ -996,14 +1020,16 @@ func (m Model) renderSyncSelectRemotePathDialogOverlay(mainView string) string {
 			for i := scrollOffset; i < endIdx; i++ {
 				file := m.remoteFiles[i]
 				icon := "📄"
+				sizeStr := humanSize(file.Size)
 				if file.IsDir {
 					icon = "📁"
+					sizeStr = ""
 				}
 				if i == m.selectedInSection[2] {
-					line := fmt.Sprintf("▶ %s %s", icon, file.Name)
+					line := fmt.Sprintf("▶ %s %-30s %s", icon, file.Name, sizeStr)
 					lines = append(lines, NewStyle().GreenBg().Bold().Render(line))
 				} else {
-					line := fmt.Sprintf("  %s %s", icon, file.Name)
+					line := fmt.Sprintf("  %s %-30s %s", icon, file.Name, sizeStr)
 					lines = append(lines, NewStyle().CyanForeground().Render(line))
 				}
 			}
@@ -1167,6 +1193,104 @@ func (m Model) renderCreateFolderDialogOverlay(mainView string) string {
 	box := NewStyle().
 		Width(55).
 		Height(12).
+		Border(lipgloss.RoundedBorder()).
+		BorderFg(ColorCyan).
+		Padding(1, 1).
+		Render(dialog)
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+}
+
+// renderHelpDialogOverlay renders the keybindings help popup
+func (m Model) renderHelpDialogOverlay(mainView string) string {
+	titleStyle := NewStyle().CyanForeground().Bold()
+	sectionStyle := NewStyle().GreenForeground().Bold()
+	keyStyle := NewStyle().YellowForeground()
+	descStyle := NewStyle().CyanForeground()
+
+	var lines []string
+	lines = append(lines, titleStyle.Render("Keybindings Reference"))
+	lines = append(lines, "")
+
+	lines = append(lines, sectionStyle.Render("-- Global --"))
+	for _, e := range [][2]string{
+		{"Tab / Shift+Tab", "Cycle focus between panels"},
+		{"?", "Show this help"},
+		{"s", "Start SCP transfer dialog"},
+		{"l", "Start Live Sync dialog"},
+		{"z", "Show active processes"},
+		{"q / Ctrl+C", "Quit"},
+	} {
+		lines = append(lines, fmt.Sprintf("  %s  %s", keyStyle.Render(fmt.Sprintf("%-18s", e[0])), descStyle.Render(e[1])))
+	}
+	lines = append(lines, "")
+
+	lines = append(lines, sectionStyle.Render("-- SSH Hosts Panel --"))
+	for _, e := range [][2]string{
+		{"Up/Down or j/k", "Navigate hosts"},
+		{"a", "Add new host"},
+		{"d", "Delete selected host"},
+		{"f", "Fetch remote files"},
+		{"o", "Open SSH terminal"},
+	} {
+		lines = append(lines, fmt.Sprintf("  %s  %s", keyStyle.Render(fmt.Sprintf("%-18s", e[0])), descStyle.Render(e[1])))
+	}
+	lines = append(lines, "")
+
+	lines = append(lines, sectionStyle.Render("-- File Browsers --"))
+	for _, e := range [][2]string{
+		{"Up/Down or j/k", "Navigate files"},
+		{"Right / Enter / l", "Enter directory"},
+		{"Left / Bksp / h", "Go to parent directory"},
+	} {
+		lines = append(lines, fmt.Sprintf("  %s  %s", keyStyle.Render(fmt.Sprintf("%-18s", e[0])), descStyle.Render(e[1])))
+	}
+	lines = append(lines, "")
+
+	lines = append(lines, sectionStyle.Render("-- SCP Dialog --"))
+	for _, e := range [][2]string{
+		{"Up/Down", "Navigate / toggle selection"},
+		{"Space", "Mark/unmark files"},
+		{"Enter", "Confirm current step"},
+		{"n", "Create new folder (dest)"},
+		{"b", "Go back one step"},
+		{"Esc", "Cancel"},
+	} {
+		lines = append(lines, fmt.Sprintf("  %s  %s", keyStyle.Render(fmt.Sprintf("%-18s", e[0])), descStyle.Render(e[1])))
+	}
+	lines = append(lines, "")
+
+	lines = append(lines, sectionStyle.Render("-- Live Sync Dialog --"))
+	for _, e := range [][2]string{
+		{"Left/Right", "Navigate directories"},
+		{"t", "Select highlighted folder"},
+		{"Space", "Toggle options"},
+		{"n", "Create new folder (remote)"},
+		{"b", "Go back one step"},
+		{"Esc", "Cancel"},
+	} {
+		lines = append(lines, fmt.Sprintf("  %s  %s", keyStyle.Render(fmt.Sprintf("%-18s", e[0])), descStyle.Render(e[1])))
+	}
+	lines = append(lines, "")
+
+	lines = append(lines, sectionStyle.Render("-- Active Processes --"))
+	for _, e := range [][2]string{
+		{"Up/Down", "Navigate process list"},
+		{"Space", "Mark/unmark process"},
+		{".", "Kill all marked processes"},
+		{"z / Esc", "Close"},
+	} {
+		lines = append(lines, fmt.Sprintf("  %s  %s", keyStyle.Render(fmt.Sprintf("%-18s", e[0])), descStyle.Render(e[1])))
+	}
+
+	lines = append(lines, "")
+	lines = append(lines, NewStyle().YellowForeground().Render("Press Esc to close"))
+
+	dialog := strings.Join(lines, "\n")
+
+	box := NewStyle().
+		Width(60).
+		Height(len(lines) + 2).
 		Border(lipgloss.RoundedBorder()).
 		BorderFg(ColorCyan).
 		Padding(1, 1).
