@@ -1,4 +1,4 @@
-module lazyscpsync
+module lazysync
 
 go 1.22
 

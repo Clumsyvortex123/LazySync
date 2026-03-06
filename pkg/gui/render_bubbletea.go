@@ -7,7 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"lazyscpsync/pkg/commands"
+	"lazysync/pkg/commands"
 )
 
 // humanSize formats a byte count into a human-readable string (B, KB, MB, GB).
@@ -22,6 +22,23 @@ func humanSize(size int64) string {
 	return fmt.Sprintf("%.1fGB", float64(size)/(1024*1024*1024))
 }
 
+// renderSplash renders the launch screen with the ASCII logo centered.
+func (m Model) renderSplash() string {
+	logoStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(ColorCyan)).
+		Bold(true)
+
+	subtitleStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(ColorGrey))
+
+	logo := logoStyle.Render(strings.TrimRight(logoArt, "\n"))
+	subtitle := subtitleStyle.Render("SSH File Transfer & Live Sync TUI")
+
+	block := lipgloss.JoinVertical(lipgloss.Center, logo, "", subtitle, "", subtitleStyle.Render("Press any key to continue..."))
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, block)
+}
+
 // renderMainView renders the main TUI layout fitted exactly to terminal size using lipgloss.
 func (m Model) renderMainView() string {
 	W := m.width
@@ -30,9 +47,8 @@ func (m Model) renderMainView() string {
 	// Header and footer each take 1 line
 	headerStyle := lipgloss.NewStyle().
 		Width(W).
-		Foreground(lipgloss.Color(ColorMagenta)).
-		Bold(true)
-	header := headerStyle.Render(" ⚡ LAZYSCPSYNC")
+		Foreground(lipgloss.Color(ColorGrey))
+	header := headerStyle.Render("")
 
 	footerStyle := lipgloss.NewStyle().
 		Width(W).

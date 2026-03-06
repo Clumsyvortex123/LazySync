@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"lazyscpsync/pkg/config"
+	"lazysync/pkg/config"
 
 	"github.com/sirupsen/logrus"
 )

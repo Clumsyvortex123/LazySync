@@ -6,11 +6,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/sirupsen/logrus"
 
-	"lazyscpsync/pkg/commands"
-	"lazyscpsync/pkg/config"
-	"lazyscpsync/pkg/gui"
-	"lazyscpsync/pkg/i18n"
-	"lazyscpsync/pkg/log"
+	"lazysync/pkg/commands"
+	"lazysync/pkg/config"
+	"lazysync/pkg/gui"
+	"lazysync/pkg/i18n"
+	"lazysync/pkg/log"
 )
 
 // App is the main application struct

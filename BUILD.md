@@ -1,4 +1,4 @@
-# Building lazyscpsync
+# Building lazysync
 
 ## Prerequisites
 
@@ -20,13 +20,13 @@ brew install go
 
 ```bash
 go mod download
-go build -o lazyscpsync .
+go build -o lazysync .
 ```
 
 ## Run
 
 ```bash
-./lazyscpsync
+./lazysync
 ```
 
 ## External Dependencies
@@ -46,7 +46,7 @@ go mod download
 
 ### Permission denied
 ```bash
-chmod +x lazyscpsync
+chmod +x lazysync
 ```
 
 ### No hosts showing

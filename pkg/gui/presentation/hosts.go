@@ -3,7 +3,7 @@ package presentation
 import (
 	"fmt"
 
-	"lazyscpsync/pkg/commands"
+	"lazysync/pkg/commands"
 )
 
 // GetHostDisplayStrings formats host info for display

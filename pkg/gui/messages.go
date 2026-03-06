@@ -1,7 +1,7 @@
 package gui
 
 import (
-	"lazyscpsync/pkg/commands"
+	"lazysync/pkg/commands"
 )
 
 // Navigation messages
@@ -81,4 +81,7 @@ type ReachabilityTickMsg struct{}
 
 // Tick for periodic updates
 type TickMsg struct{}
+
+// Splash screen auto-dismiss
+type SplashDoneMsg struct{}
 

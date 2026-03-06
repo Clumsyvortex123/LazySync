@@ -2,6 +2,7 @@ package gui
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
@@ -16,10 +17,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/sirupsen/logrus"
 
-	"lazyscpsync/pkg/commands"
-	"lazyscpsync/pkg/config"
-	"lazyscpsync/pkg/i18n"
+	"lazysync/pkg/commands"
+	"lazysync/pkg/config"
+	"lazysync/pkg/i18n"
 )
+
+//go:embed assets/logo.txt
+var logoArt string
 
 // SectionItem represents a single item in a sidebar section
 type SectionItem struct {
@@ -176,6 +180,9 @@ type Model struct {
 	hostsPanelHeight int // content height available for hosts list
 	filePanelHeight  int // content height available for file listing in local/remote panels
 
+	// Splash screen
+	showSplash bool
+
 	// Logging
 	log *logrus.Entry
 }
@@ -295,6 +302,7 @@ func NewModel(
 		hostReachability:   make(map[string]bool),
 		remoteCache:        newRemoteDirectoryCache(),
 		filePanelHeight:    10, // sensible default until first WindowSizeMsg
+		showSplash:         true,
 	}
 
 	return m
@@ -307,14 +315,25 @@ func (m Model) Init() tea.Cmd {
 		m.loadFilesSection(),
 		m.loadSyncSessionsSection(),
 		m.tickCmd(),
-		m.checkAllHostsReachability(), // first check on startup
+		m.checkAllHostsReachability(),
+		tea.Tick(2*time.Second, func(time.Time) tea.Msg { return SplashDoneMsg{} }),
 	)
 }
 
 // Update handles messages
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case SplashDoneMsg:
+		m.showSplash = false
+		return m, nil
+
 	case tea.KeyMsg:
+		// Dismiss splash on any key
+		if m.showSplash {
+			m.showSplash = false
+			return m, nil
+		}
+
 		// Handle dialog input
 		if m.dialogState != DialogNone {
 			return m.handleDialogInput(msg)
@@ -675,6 +694,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) View() string {
 	if m.width == 0 {
 		return "Initializing..."
+	}
+
+	if m.showSplash {
+		return m.renderSplash()
 	}
 
 	// Handle dialogs

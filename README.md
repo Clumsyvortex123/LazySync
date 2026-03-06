@@ -1,4 +1,4 @@
-# lazyscpsync
+# lazysync
 
 A terminal UI tool for SSH file transfer and live synchronization, built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) and [Lip Gloss](https://github.com/charmbracelet/lipgloss).
 
@@ -18,7 +18,7 @@ A terminal UI tool for SSH file transfer and live synchronization, built with [B
 ## Project Structure
 
 ```
-lazyscpsync/
+lazysync/
 ├── main.go                          # Entry point
 ├── go.mod                           # Go module
 ├── pkg/
@@ -52,13 +52,13 @@ Requirements:
 
 ```bash
 go mod download
-go build -o lazyscpsync .
+go build -o lazysync .
 ```
 
 ## Running
 
 ```bash
-./lazyscpsync
+./lazysync
 ```
 
 ## Keybindings
@@ -159,7 +159,7 @@ Host myserver
 
 ### Supplementary Hosts
 
-Manually added hosts are saved to `~/.config/lazyscpsync/hosts.yml`.
+Manually added hosts are saved to `~/.config/lazysync/hosts.yml`.
 
 ## Dependencies
 

@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"lazyscpsync/pkg/commands"
+	"lazysync/pkg/commands"
 )
 
 // renderHostsPanelContent renders the left SSH hosts panel content (no border/title)

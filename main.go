@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"lazyscpsync/pkg/app"
+	"lazysync/pkg/app"
 )
 
 func main() {

@@ -21,14 +21,14 @@ type AppConfig struct {
 
 // NewAppConfig creates and initializes the app configuration
 func NewAppConfig() (*AppConfig, error) {
-	xdgDirs := xdg.New("lazyscpsync", "0.1.0")
+	xdgDirs := xdg.New("lazysync", "0.1.0")
 
-	configDir := filepath.Join(xdgDirs.ConfigHome(), "lazyscpsync")
+	configDir := filepath.Join(xdgDirs.ConfigHome(), "lazysync")
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		return nil, err
 	}
 
-	cacheDir := filepath.Join(xdgDirs.CacheHome(), "lazyscpsync")
+	cacheDir := filepath.Join(xdgDirs.CacheHome(), "lazysync")
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		return nil, err
 	}
@@ -39,7 +39,7 @@ func NewAppConfig() (*AppConfig, error) {
 		BuildDate: "dev",
 		ConfigDir: configDir,
 		CacheDir:  cacheDir,
-		LogFile:   filepath.Join(cacheDir, "lazyscpsync.log"),
+		LogFile:   filepath.Join(cacheDir, "lazysync.log"),
 		HostsFile: filepath.Join(configDir, "hosts.yml"),
 	}, nil
 }

@@ -3,7 +3,7 @@ package i18n
 // newEnglish returns the English translation set
 func newEnglish() *TranslationSet {
 	return &TranslationSet{
-		AppName:              "lazyscpsync",
+		AppName:              "lazysync",
 		Version:              "0.1.0",
 		ErrorTitle:           "Error",
 		CannotKillChildError: "Cannot kill child process",

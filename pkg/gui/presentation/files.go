@@ -3,7 +3,7 @@ package presentation
 import (
 	"fmt"
 
-	"lazyscpsync/pkg/commands"
+	"lazysync/pkg/commands"
 )
 
 // GetFileDisplayStrings formats file info for display

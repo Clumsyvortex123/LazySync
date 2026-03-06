@@ -14,7 +14,7 @@ import (
 	"github.com/jesseduffield/yaml"
 	"github.com/sirupsen/logrus"
 
-	"lazyscpsync/pkg/config"
+	"lazysync/pkg/config"
 )
 
 // SSHHost represents a single SSH host entry

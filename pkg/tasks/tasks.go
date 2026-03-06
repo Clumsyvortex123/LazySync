@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"lazyscpsync/pkg/i18n"
+	"lazysync/pkg/i18n"
 
 	"github.com/sasha-s/go-deadlock"
 	"github.com/sirupsen/logrus"

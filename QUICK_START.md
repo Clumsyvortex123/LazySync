@@ -4,8 +4,8 @@
 
 ```bash
 go mod download
-go build -o lazyscpsync .
-./lazyscpsync
+go build -o lazysync .
+./lazysync
 ```
 
 ## First Steps
