@@ -133,6 +133,8 @@ type Model struct {
 	localFiles     []*commands.FileEntry      // cached local files
 	remoteFiles    []*commands.RemoteEntry    // cached remote files
 	hostsScroll    int     // scroll offset for hosts panel
+	hostsTab       int     // 0=All, 1=Online, 2=Offline
+	reachabilityLoaded bool // true after first reachability check completes
 	localScroll    int     // scroll offset for local file browser
 	remoteScroll   int     // scroll offset for remote file browser
 	isLoadingRemote  bool                   // loading state for remote files
@@ -343,37 +345,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "s":
 			// Start SCP - only if we have a host selected
-			if len(m.sections[0].Items) > 0 && m.selectedInSection[0] < len(m.sections[0].Items) {
-				if host, ok := m.sections[0].Items[m.selectedInSection[0]].Data.(*commands.SSHHost); ok {
-					m.scpSelectedHost = host
-					m.scpMarkedFilePaths = make(map[string]bool)
-					m.invalidateRemoteCacheIfHostChanged(host)
-					m.dialogState = DialogSCPConfirm
-					if len(m.remoteFiles) == 0 {
-						return m, m.navigateRemote(m.remotePath)
-					}
-					return m, nil
+			if host := m.getSelectedHost(); host != nil {
+				m.scpSelectedHost = host
+				m.scpMarkedFilePaths = make(map[string]bool)
+				m.invalidateRemoteCacheIfHostChanged(host)
+				m.dialogState = DialogSCPConfirm
+				if len(m.remoteFiles) == 0 {
+					return m, m.navigateRemote(m.remotePath)
 				}
+				return m, nil
 			}
 			return m, nil
 		case "l":
 			// Start live sync — need a host selected
-			if len(m.sections[0].Items) > 0 && m.selectedInSection[0] < len(m.sections[0].Items) {
-				if host, ok := m.sections[0].Items[m.selectedInSection[0]].Data.(*commands.SSHHost); ok {
-					m.scpSelectedHost = host
-					m.invalidateRemoteCacheIfHostChanged(host)
-					m.syncLocalPath = m.localPath
-					m.syncRemotePath = m.remotePath
-					m.syncNoWatch = false
-					m.syncGitExclude = false
-					m.syncOptionsCursor = 0
-					m.syncExecCommand = ""
-					m.dialogState = DialogSyncConfirm
-					if len(m.remoteFiles) == 0 {
-						return m, m.navigateRemote(m.remotePath)
-					}
-					return m, nil
+			if host := m.getSelectedHost(); host != nil {
+				m.scpSelectedHost = host
+				m.invalidateRemoteCacheIfHostChanged(host)
+				m.syncLocalPath = m.localPath
+				m.syncRemotePath = m.remotePath
+				m.syncNoWatch = false
+				m.syncGitExclude = false
+				m.syncOptionsCursor = 0
+				m.syncExecCommand = ""
+				m.dialogState = DialogSyncConfirm
+				if len(m.remoteFiles) == 0 {
+					return m, m.navigateRemote(m.remotePath)
 				}
+				return m, nil
 			}
 			return m, nil
 		case "?":
@@ -414,14 +412,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "down", "j":
-			maxIdx := len(m.sections[m.focusedSection].Items) - 1
+			var maxIdx int
+			if m.focusedSection == 0 {
+				maxIdx = len(m.filteredHostItems()) - 1
+			} else {
+				maxIdx = len(m.sections[m.focusedSection].Items) - 1
+			}
 			if m.selectedInSection[m.focusedSection] < maxIdx {
 				m.selectedInSection[m.focusedSection]++
-				// Scroll hosts panel if selection goes below visible area
 				if m.focusedSection == 0 {
 					vh := m.hostsPanelHeight
 					if vh < 1 {
 						vh = 5
+					}
+					// Reserve 1 line for scroll indicator when list is scrollable
+					items := m.filteredHostItems()
+					if len(items) > m.hostsPanelHeight {
+						vh--
 					}
 					if m.selectedInSection[0] >= m.hostsScroll+vh {
 						m.hostsScroll = m.selectedInSection[0] - vh + 1
@@ -453,11 +460,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "left":
-			m.progressVal = max(0, m.progressVal-0.05)
+			if m.focusedSection == 0 {
+				if m.hostsTab > 0 {
+					m.hostsTab--
+					m.selectedInSection[0] = 0
+					m.hostsScroll = 0
+				}
+			}
 			return m, nil
 
 		case "right":
-			m.progressVal = min(1, m.progressVal+0.05)
+			if m.focusedSection == 0 {
+				if m.hostsTab < 2 {
+					m.hostsTab++
+					m.selectedInSection[0] = 0
+					m.hostsScroll = 0
+				}
+			}
 			return m, nil
 
 		case "a":
@@ -475,27 +494,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "o":
 			// Open SSH terminal for selected host
-			if m.focusedSection == 0 && len(m.sections[0].Items) > 0 {
-				idx := m.selectedInSection[0]
-				if idx < len(m.sections[0].Items) {
-					if host, ok := m.sections[0].Items[idx].Data.(*commands.SSHHost); ok {
-						sshTarget := fmt.Sprintf("%s@%s", host.User, host.Hostname)
-						sshArgs := "ssh"
-						if host.KeyPath != "" {
-							sshArgs += fmt.Sprintf(" -i %s", host.KeyPath)
-						}
-						if host.Port != 0 && host.Port != 22 {
-							sshArgs += fmt.Sprintf(" -p %d", host.Port)
-						}
-						sshArgs += " " + sshTarget
-						// Set terminal title to host name, then exec ssh
-						shellCmd := fmt.Sprintf(`echo -ne "\033]0;%s\007"; exec %s`, host.Name, sshArgs)
-						cmd := exec.Command("gnome-terminal", "--", "bash", "-c", shellCmd)
-						if err := cmd.Start(); err != nil {
-							m.appendConsole(fmt.Sprintf("Failed to open terminal: %v", err))
-						} else {
-							m.appendConsole(fmt.Sprintf("Opened SSH terminal to %s", sshTarget))
-						}
+			if m.focusedSection == 0 {
+				if host := m.getSelectedHost(); host != nil {
+					sshTarget := fmt.Sprintf("%s@%s", host.User, host.Hostname)
+					sshArgs := "ssh"
+					if host.KeyPath != "" {
+						sshArgs += fmt.Sprintf(" -i %s", host.KeyPath)
+					}
+					if host.Port != 0 && host.Port != 22 {
+						sshArgs += fmt.Sprintf(" -p %d", host.Port)
+					}
+					sshArgs += " " + sshTarget
+					shellCmd := fmt.Sprintf(`echo -ne "\033]0;%s\007"; exec %s`, host.Name, sshArgs)
+					cmd := exec.Command("gnome-terminal", "--", "bash", "-c", shellCmd)
+					if err := cmd.Start(); err != nil {
+						m.appendConsole(fmt.Sprintf("Failed to open terminal: %v", err))
+					} else {
+						m.appendConsole(fmt.Sprintf("Opened SSH terminal to %s", sshTarget))
 					}
 				}
 			}
@@ -632,8 +647,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmd, m.tickCmd())
 
 	case HostReachabilityMsg:
-		// Update reachability map and schedule next check in 5s
 		m.hostReachability = msg.Results
+		m.reachabilityLoaded = true
 		return m, m.reachabilityTickCmd()
 
 	case ReachabilityTickMsg:
@@ -806,15 +821,42 @@ func (m *Model) navigateLocalDirectory(targetPath string) {
 	m.localScroll = 0           // reset scroll on directory change
 }
 
+// filteredHostItems returns host items filtered by the current hostsTab.
+// 0=All, 1=Online, 2=Offline
+func (m Model) filteredHostItems() []SectionItem {
+	all := m.sections[0].Items
+	if m.hostsTab == 0 {
+		return all
+	}
+	var filtered []SectionItem
+	for _, item := range all {
+		host, ok := item.Data.(*commands.SSHHost)
+		if !ok {
+			continue
+		}
+		reachable, checked := m.hostReachability[host.Name]
+		if !checked {
+			continue
+		}
+		if m.hostsTab == 1 && reachable {
+			filtered = append(filtered, item)
+		} else if m.hostsTab == 2 && !reachable {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
 func (m Model) getSelectedHost() *commands.SSHHost {
-	if len(m.sections[0].Items) == 0 {
+	items := m.filteredHostItems()
+	if len(items) == 0 {
 		return nil
 	}
 	idx := m.selectedInSection[0]
-	if idx >= len(m.sections[0].Items) {
+	if idx >= len(items) {
 		return nil
 	}
-	host, ok := m.sections[0].Items[idx].Data.(*commands.SSHHost)
+	host, ok := items[idx].Data.(*commands.SSHHost)
 	if !ok {
 		return nil
 	}
@@ -908,10 +950,10 @@ func (m *Model) recalcPanelDimensions() {
 	if bodyH < 6 {
 		bodyH = 6
 	}
-	topH := bodyH / 4
+	topH := bodyH * 2 / 5
 	consoleH := bodyH / 5
-	if topH < 4 {
-		topH = 4
+	if topH < 6 {
+		topH = 6
 	}
 	if consoleH < 3 {
 		consoleH = 3
@@ -920,8 +962,8 @@ func (m *Model) recalcPanelDimensions() {
 	if midH < 4 {
 		midH = 4
 	}
-	// topH outer → content height for hosts = topH - 3 (border + title)
-	m.hostsPanelHeight = topH - 3
+	// topH outer → content height for hosts = topH - 3 (border + title) - 1 (tab bar)
+	m.hostsPanelHeight = topH - 4
 	if m.hostsPanelHeight < 1 {
 		m.hostsPanelHeight = 1
 	}
@@ -1238,9 +1280,8 @@ func (m Model) handleConfirmDialogInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y":
 		// Delete the selected host
-		if m.focusedSection == 0 && m.selectedInSection[0] < len(m.sections[0].Items) {
-			item := m.sections[0].Items[m.selectedInSection[0]]
-			if host, ok := item.Data.(*commands.SSHHost); ok {
+		if m.focusedSection == 0 {
+			if host := m.getSelectedHost(); host != nil {
 				err := m.hostCmd.RemoveHost(host.Name)
 				if err != nil {
 					m.currentError = fmt.Sprintf("Failed to delete host: %v", err)

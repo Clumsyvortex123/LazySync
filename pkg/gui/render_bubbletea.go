@@ -53,7 +53,7 @@ func (m Model) renderMainView() string {
 	footerStyle := lipgloss.NewStyle().
 		Width(W).
 		Foreground(lipgloss.Color(ColorCyan))
-	footer := footerStyle.Render(" Tab:Switch ↑↓:Nav ←→:Dir a:Add f:Fetch o:SSH s:SCP l:Sync z:Procs ?:Help q:Quit")
+	footer := footerStyle.Render(" Tab:Switch ↑↓:Nav ←→:Dir/Tab a:Add f:Fetch o:SSH s:SCP l:Sync z:Procs ?:Help q:Quit")
 
 	// Body fills remaining height
 	bodyH := H - 2
@@ -62,10 +62,11 @@ func (m Model) renderMainView() string {
 	}
 
 	// Row heights (outer including borders)
-	topH := bodyH / 4
+	// Hosts panel gets ~40% of body, file panels get remainder minus console
+	topH := bodyH * 2 / 5
 	consoleH := bodyH / 5
-	if topH < 4 {
-		topH = 4
+	if topH < 6 {
+		topH = 6
 	}
 	if consoleH < 3 {
 		consoleH = 3

@@ -12,18 +12,53 @@ import (
 // renderHostsPanelContent renders the left SSH hosts panel content (no border/title)
 func (m Model) renderHostsPanelContent(width, height int) string {
 	isFocused := m.focusedSection == 0
+
+	// Tab bar (takes 1 line)
+	tabNames := []string{"All", "Online", "Offline"}
+	var tabParts []string
+	for i, name := range tabNames {
+		if i == m.hostsTab {
+			tabParts = append(tabParts, NewStyle().GreenBg().Bold().Render(" "+name+" "))
+		} else {
+			tabParts = append(tabParts, NewStyle().GreyForeground().Render(" "+name+" "))
+		}
+	}
+	tabBar := strings.Join(tabParts, NewStyle().CyanForeground().Render("│"))
+
+	// Remaining height for host list
+	listH := height - 1
+	if listH < 1 {
+		listH = 1
+	}
+
+	// For Online/Offline tabs, show loading if reachability not yet checked
+	if m.hostsTab != 0 && !m.reachabilityLoaded {
+		return tabBar + "\n" + NewStyle().YellowForeground().Render(" ⣿ Checking host reachability...")
+	}
+
+	items := m.filteredHostItems()
 	selected := m.selectedInSection[0]
-	items := m.sections[0].Items
 
 	if len(items) == 0 {
-		return NewStyle().CyanForeground().Render("(empty)")
+		emptyMsg := "(no hosts)"
+		if m.hostsTab == 1 {
+			emptyMsg = "(no online hosts)"
+		} else if m.hostsTab == 2 {
+			emptyMsg = "(no offline hosts)"
+		}
+		return tabBar + "\n" + NewStyle().GreyForeground().Render(" "+emptyMsg)
 	}
 
 	var lines []string
 
-	// Apply scroll offset
+	needsScroll := len(items) > listH
+	visibleH := listH
+	if needsScroll {
+		visibleH = listH - 1 // reserve 1 line for scroll indicator
+	}
+
 	scrollOffset := m.hostsScroll
-	endIdx := scrollOffset + height
+	endIdx := scrollOffset + visibleH
 	if endIdx > len(items) {
 		endIdx = len(items)
 	}
@@ -31,8 +66,7 @@ func (m Model) renderHostsPanelContent(width, height int) string {
 	for i := scrollOffset; i < endIdx; i++ {
 		item := items[i]
 
-		// Determine reachability status dot
-		dot := "🟡" // not yet checked
+		dot := "🟡"
 		if host, ok := item.Data.(*commands.SSHHost); ok {
 			if reachable, checked := m.hostReachability[host.Name]; checked {
 				if reachable {
@@ -48,7 +82,6 @@ func (m Model) renderHostsPanelContent(width, height int) string {
 		if i == selected && isFocused {
 			lines = append(lines, NewStyle().GreenBg().Bold().Render("▶"+label))
 		} else {
-			// Grey out unreachable hosts
 			unreachable := false
 			if host, ok := item.Data.(*commands.SSHHost); ok {
 				if reachable, checked := m.hostReachability[host.Name]; checked && !reachable {
@@ -63,17 +96,12 @@ func (m Model) renderHostsPanelContent(width, height int) string {
 		}
 	}
 
-	// Scroll indicator
-	if len(items) > height {
+	if needsScroll {
 		indicator := fmt.Sprintf(" ↕ %d/%d", selected+1, len(items))
-		if len(lines) >= height {
-			lines[height-1] = NewStyle().YellowForeground().Render(indicator)
-		} else {
-			lines = append(lines, NewStyle().YellowForeground().Render(indicator))
-		}
+		lines = append(lines, NewStyle().YellowForeground().Render(indicator))
 	}
 
-	return strings.Join(lines, "\n")
+	return tabBar + "\n" + strings.Join(lines, "\n")
 }
 
 // renderFileBrowserPanelContent renders a file browser panel content (no border/title)
