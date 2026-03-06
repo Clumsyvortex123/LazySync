@@ -2,18 +2,19 @@
 
 A terminal UI tool for SSH file transfer and live synchronization, built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) and [Lip Gloss](https://github.com/charmbracelet/lipgloss).
 
-![TRON-themed TUI](livesync_scp.svg)
-
 ## Features
 
 - **SSH Host Management** - Reads hosts from `~/.ssh/config`, add/delete hosts via TUI
-- **Host Reachability** - Automatic background connectivity checks with status indicators
+- **Host Reachability** - Automatic background connectivity checks with green/red status dots
+- **Host Filtering** - Tabbed view: All / Online / Offline hosts, switch with left/right arrows
+- **Splash Screen** - ASCII art launch screen while hosts are checked in the background
 - **Local File Browser** - Navigate local filesystem with scroll, icons, and file sizes
-- **Remote File Browser** - Browse remote filesystems over SSH with auto-fetch on navigation
+- **Remote File Browser** - Browse remote filesystems over SSH with caching for instant revisits
 - **SCP Transfer** - Multi-stage dialog: select source/dest, mark files, confirm command, execute
 - **Live Sync** - Continuous file synchronization using [livesync](https://github.com/bstollnitz/livesync) with watch mode and git-exclude options
 - **Process Management** - Track running SCP/sync processes, batch kill via checkbox dialog
 - **Create Folders** - Create new directories on local or remote filesystems during transfers
+- **SSH Terminal** - Open gnome-terminal with SSH to any host, titled with the host name
 
 ## Project Structure
 
@@ -34,11 +35,12 @@ lazysync/
 │   │   ├── sync.go                  # Sync session tracking
 │   │   └── os.go                    # Shell execution wrapper
 │   └── gui/
-│       ├── bubbletea_model.go       # Model, Update, Init, all handlers (~2400 lines)
-│       ├── render_bubbletea.go      # View, all render/overlay functions (~1200 lines)
+│       ├── bubbletea_model.go       # Model, Update, Init, all handlers
+│       ├── render_bubbletea.go      # View, all render/overlay functions
 │       ├── render_panels.go         # Panel content renderers (hosts, files, console)
 │       ├── styles_bubbletea.go      # TRON color theme and StyleBuilder
 │       ├── messages.go              # Bubble Tea message types
+│       ├── assets/logo.txt          # ASCII art splash logo
 │       └── presentation/            # Display formatting helpers
 │           ├── hosts.go
 │           ├── files.go
@@ -79,10 +81,11 @@ go build -o lazysync .
 
 | Key | Action |
 |-----|--------|
+| `←` / `→` | Switch between All / Online / Offline tabs |
 | `a` | Add new SSH host |
 | `d` | Delete selected host |
-| `f` | Fetch remote files for selected host |
-| `o` | Open SSH terminal to selected host |
+| `f` | Fetch remote files for selected host (clears cache) |
+| `o` | Open SSH terminal to selected host (gnome-terminal) |
 
 ### Navigation (Hosts / File Browsers)
 
@@ -90,8 +93,8 @@ go build -o lazysync .
 |-----|--------|
 | `Up` / `k` | Move selection up |
 | `Down` / `j` | Move selection down |
-| `Right` / `Enter` | Enter directory |
-| `Left` / `Backspace` | Go to parent directory |
+| `Right` / `Enter` | Enter directory (file browsers) |
+| `Left` / `Backspace` | Go to parent directory (file browsers) |
 
 ### SCP Dialog Flow
 
@@ -133,11 +136,12 @@ go build -o lazysync .
 ```
 ┌──────────────────────┬──────────────────────┐
 │  SSH HOSTS           │  STATUS / PROCESSES  │
-│  (reachability dots) │  (running/watching)  │
+│  [All|Online|Offline]│  (running/watching)  │
+│  (reachability dots) │                      │
+├──────────────────────┼──────────────────────┤
+│  LOCAL FILES         │  REMOTE FILES        │
+│  (file browser)      │  (file browser)      │
 ├──────────────────────┴──────────────────────┤
-│  LOCAL FILES           │  REMOTE FILES      │
-│  (file browser)        │  (file browser)    │
-├─────────────────────────────────────────────┤
 │  CONSOLE LOG                                │
 ├─────────────────────────────────────────────┤
 │  Footer: keybinding hints                   │
@@ -173,6 +177,7 @@ Manually added hosts are saved to `~/.config/lazysync/hosts.yml`.
 - `scp` - For file transfers (system SSH)
 - `livesync` - For continuous synchronization (must be installed separately)
 - `ssh` - For remote file browsing and folder creation
+- `gnome-terminal` - For opening SSH terminal sessions (optional)
 
 ## License
 

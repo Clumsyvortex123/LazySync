@@ -35,6 +35,7 @@ These tools must be installed separately on your system:
 
 - `ssh` / `scp` - For remote operations and file transfers
 - `livesync` - For continuous synchronization (install from [livesync repo](https://github.com/bstollnitz/livesync))
+- `gnome-terminal` - For opening SSH terminal sessions (optional, `o` key)
 
 ## Troubleshooting
 
@@ -52,3 +53,8 @@ chmod +x lazysync
 ### No hosts showing
 - Verify `~/.ssh/config` exists and contains `Host` entries
 - Check with `cat ~/.ssh/config`
+
+### Remote files not loading
+- Ensure the selected host is reachable (green dot)
+- Press `f` to force a fresh fetch
+- Check the CONSOLE panel for error messages

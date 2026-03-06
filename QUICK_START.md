@@ -10,15 +10,17 @@ go build -o lazysync .
 
 ## First Steps
 
-1. SSH hosts from `~/.ssh/config` appear in the top-left panel with reachability dots
-2. Use `Tab` to switch between panels, arrow keys to navigate
-3. Press `f` on a host to fetch its remote files
+1. A splash screen appears on launch — press any key or wait 2 seconds
+2. SSH hosts from `~/.ssh/config` appear in the top-left panel
+3. Hosts are checked for reachability in the background (green = online, red = offline)
+4. Use `←`/`→` to switch between All / Online / Offline tabs in the hosts panel
+5. Use `Tab` to switch between panels, `↑`/`↓` to navigate
 
 ## Common Workflows
 
 ### SCP Transfer
 
-1. Press `s` to open the SCP dialog
+1. Select a host, press `s` to open the SCP dialog (remote files pre-fetch automatically)
 2. Choose source (Local/Remote) and destination
 3. Mark files with `Space`, confirm with `Enter`
 4. Browse to destination path (press `n` to create a folder)
@@ -26,11 +28,15 @@ go build -o lazysync .
 
 ### Live Sync
 
-1. Press `l` to open the Live Sync dialog
+1. Select a host, press `l` to open the Live Sync dialog (remote files pre-fetch automatically)
 2. Browse and select local source path (press `t` to select folder)
 3. Browse and select remote destination path
 4. Toggle options: `no-watch` (one-shot) or `standard-git-exclude`
 5. Review and execute the livesync command
+
+### SSH Terminal
+
+- Press `o` on any host to open a gnome-terminal with SSH (titled with the host name)
 
 ### Managing Processes
 
@@ -43,12 +49,17 @@ go build -o lazysync .
 - Press `a` to add a new host manually
 - Press `d` to delete the selected host
 
+### Fetch Remote Files
+
+- Press `f` to fetch remote file listing (clears cache and fetches fresh from `/`)
+
 ## Key Reference
 
 | Key | Action |
 |-----|--------|
 | `Tab` | Switch panels |
 | `?` | Show keybindings help |
+| `←`/`→` | Switch host tabs (All/Online/Offline) |
 | `s` | SCP transfer |
 | `l` | Live sync |
 | `z` | Active processes |
