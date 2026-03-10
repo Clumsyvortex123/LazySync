@@ -98,6 +98,65 @@ func (r panelRect) contains(mx, my int) bool {
 	return mx >= r.x && mx < r.x+r.w && my >= r.y && my < r.y+r.h
 }
 
+// helpEntry represents a single line in the help dialog.
+// Entries with a non-empty Action are selectable and executable.
+type helpEntry struct {
+	Key    string // key display (empty for section headers / blank lines)
+	Desc   string // description
+	Action string // action ID (empty = not selectable)
+	IsHeader bool
+}
+
+// helpEntries returns the full list of help entries for the help dialog.
+func helpEntries() []helpEntry {
+	return []helpEntry{
+		{IsHeader: true, Desc: "Global"},
+		{Key: "Tab / Shift+Tab", Desc: "Cycle focus between panels"},
+		{Key: "?", Desc: "Show this help"},
+		{Key: "s", Desc: "Start SCP transfer dialog", Action: "scp"},
+		{Key: "l", Desc: "Start Live Sync dialog", Action: "sync"},
+		{Key: "z", Desc: "Show active processes", Action: "procs"},
+		{Key: "q / Ctrl+C", Desc: "Quit", Action: "quit"},
+		{}, // blank line
+		{IsHeader: true, Desc: "SSH Hosts Panel"},
+		{Key: "Up/Down or j/k", Desc: "Navigate hosts"},
+		{Key: "Left/Right", Desc: "Switch All / Online / Offline tabs"},
+		{Key: "a", Desc: "Add new host", Action: "add_host"},
+		{Key: "e", Desc: "Edit selected host", Action: "edit_host"},
+		{Key: "d", Desc: "Delete selected host", Action: "delete_host"},
+		{Key: "f", Desc: "Fetch remote files", Action: "fetch"},
+		{Key: "o", Desc: "Open SSH terminal", Action: "ssh_terminal"},
+		{}, // blank line
+		{IsHeader: true, Desc: "File Browsers"},
+		{Key: "Up/Down or j/k", Desc: "Navigate files"},
+		{Key: "Right / Enter / l", Desc: "Enter directory"},
+		{Key: "Left / Bksp / h", Desc: "Go to parent directory"},
+		{Key: "Double-click", Desc: "Enter directory"},
+		{}, // blank line
+		{IsHeader: true, Desc: "SCP Dialog"},
+		{Key: "Up/Down", Desc: "Navigate / toggle selection"},
+		{Key: "Space", Desc: "Mark/unmark files"},
+		{Key: "Enter", Desc: "Confirm current step"},
+		{Key: "n", Desc: "Create new folder (dest)"},
+		{Key: "b", Desc: "Go back one step"},
+		{Key: "Esc", Desc: "Cancel"},
+		{}, // blank line
+		{IsHeader: true, Desc: "Live Sync Dialog"},
+		{Key: "Left/Right", Desc: "Navigate directories"},
+		{Key: "t", Desc: "Select highlighted folder"},
+		{Key: "Space", Desc: "Toggle options"},
+		{Key: "n", Desc: "Create new folder (remote)"},
+		{Key: "b", Desc: "Go back one step"},
+		{Key: "Esc", Desc: "Cancel"},
+		{}, // blank line
+		{IsHeader: true, Desc: "Active Processes"},
+		{Key: "Up/Down", Desc: "Navigate process list"},
+		{Key: "Space", Desc: "Mark/unmark process"},
+		{Key: ".", Desc: "Kill all marked processes"},
+		{Key: "z / Esc", Desc: "Close"},
+	}
+}
+
 // Model is the main Bubble Tea model
 type Model struct {
 	// Dimensions
@@ -198,6 +257,10 @@ type Model struct {
 	lastClickTime time.Time // for double-click detection
 	lastClickX    int
 	lastClickY    int
+
+	// Help dialog state
+	helpCursor int // selected line in help dialog
+	helpScroll int // scroll offset in help dialog
 
 	// Edit host state
 	editHostOriginalName string // original name of host being edited
@@ -397,6 +460,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "?":
 			m.dialogState = DialogHelp
+			m.helpCursor = 0
+			m.helpScroll = 0
+			// Advance cursor to first selectable entry
+			entries := helpEntries()
+			for i, e := range entries {
+				if e.Action != "" {
+					m.helpCursor = i
+					break
+				}
+			}
 			return m, nil
 		}
 
@@ -597,7 +670,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showSplash = false
 			return m, nil
 		}
-		// Ignore mouse in dialogs
+		// Handle mouse in help dialog
+		if m.dialogState == DialogHelp {
+			return m.handleHelpMouseInput(tea.MouseEvent(msg))
+		}
+		// Ignore mouse in other dialogs
 		if m.dialogState != DialogNone {
 			return m, nil
 		}
@@ -1255,10 +1332,7 @@ func (m Model) handleDialogInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case DialogCreateFolder:
 		return m.handleCreateFolderInput(msg)
 	case DialogHelp:
-		if msg.String() == "esc" || msg.String() == "?" {
-			m.dialogState = DialogNone
-		}
-		return m, nil
+		return m.handleHelpDialogInput(msg)
 	default:
 		return m, nil
 	}
@@ -2766,6 +2840,234 @@ func (m *Model) handleCreateFolderInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+}
+
+// handleHelpDialogInput handles keyboard navigation in the help dialog.
+func (m Model) handleHelpDialogInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	entries := helpEntries()
+
+	switch msg.String() {
+	case "esc", "?":
+		m.dialogState = DialogNone
+		return m, nil
+
+	case "up", "k":
+		// Move to previous selectable entry
+		for i := m.helpCursor - 1; i >= 0; i-- {
+			if entries[i].Action != "" {
+				m.helpCursor = i
+				// Scroll up if needed
+				if m.helpCursor < m.helpScroll {
+					m.helpScroll = m.helpCursor
+				}
+				break
+			}
+		}
+		return m, nil
+
+	case "down", "j":
+		// Move to next selectable entry
+		for i := m.helpCursor + 1; i < len(entries); i++ {
+			if entries[i].Action != "" {
+				m.helpCursor = i
+				// Scroll down if needed (visible height ~30)
+				visibleH := 30
+				if m.height-10 < visibleH {
+					visibleH = m.height - 10
+				}
+				if visibleH < 5 {
+					visibleH = 5
+				}
+				if m.helpCursor >= m.helpScroll+visibleH {
+					m.helpScroll = m.helpCursor - visibleH + 1
+				}
+				break
+			}
+		}
+		return m, nil
+
+	case "enter":
+		if m.helpCursor < len(entries) && entries[m.helpCursor].Action != "" {
+			return m.executeHelpAction(entries[m.helpCursor].Action)
+		}
+		return m, nil
+	}
+
+	return m, nil
+}
+
+// handleHelpMouseInput handles mouse events in the help dialog.
+func (m Model) handleHelpMouseInput(msg tea.MouseEvent) (tea.Model, tea.Cmd) {
+	entries := helpEntries()
+
+	switch {
+	case msg.Button == tea.MouseButtonWheelUp:
+		// Scroll up — move to previous selectable
+		for i := m.helpCursor - 1; i >= 0; i-- {
+			if entries[i].Action != "" {
+				m.helpCursor = i
+				if m.helpCursor < m.helpScroll {
+					m.helpScroll = m.helpCursor
+				}
+				break
+			}
+		}
+		return m, nil
+
+	case msg.Button == tea.MouseButtonWheelDown:
+		// Scroll down — move to next selectable
+		for i := m.helpCursor + 1; i < len(entries); i++ {
+			if entries[i].Action != "" {
+				m.helpCursor = i
+				visibleH := m.height - 10
+				if visibleH < 5 {
+					visibleH = 5
+				}
+				if m.helpCursor >= m.helpScroll+visibleH {
+					m.helpScroll = m.helpCursor - visibleH + 1
+				}
+				break
+			}
+		}
+		return m, nil
+
+	case msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress:
+		// Map click Y to entry index
+		// Dialog is centered; content starts at title(1) + blank(1) + border(1) + padding(1) = 4 lines from dialog top
+		dialogH := m.height - 10
+		if dialogH > len(entries) {
+			dialogH = len(entries)
+		}
+		if dialogH < 5 {
+			dialogH = 5
+		}
+		boxH := dialogH + 8 // approximate box height including title, footer, borders, padding
+		dialogTop := (m.height - boxH) / 2
+		contentY := msg.Y - dialogTop - 4 // skip border, padding, title, blank line
+
+		if contentY < 0 || contentY >= dialogH {
+			return m, nil
+		}
+
+		clickedIdx := m.helpScroll + contentY
+		if clickedIdx >= 0 && clickedIdx < len(entries) && entries[clickedIdx].Action != "" {
+			// Double-click detection
+			now := time.Now()
+			isDoubleClick := now.Sub(m.lastClickTime) < 400*time.Millisecond &&
+				msg.X == m.lastClickX && msg.Y == m.lastClickY
+			m.lastClickTime = now
+			m.lastClickX = msg.X
+			m.lastClickY = msg.Y
+
+			m.helpCursor = clickedIdx
+
+			if isDoubleClick {
+				return m.executeHelpAction(entries[clickedIdx].Action)
+			}
+		}
+		return m, nil
+	}
+
+	return m, nil
+}
+
+// executeHelpAction executes the action associated with a help entry.
+func (m Model) executeHelpAction(action string) (tea.Model, tea.Cmd) {
+	m.dialogState = DialogNone
+
+	switch action {
+	case "scp":
+		if host := m.getSelectedHost(); host != nil {
+			m.scpSelectedHost = host
+			m.scpMarkedFilePaths = make(map[string]bool)
+			m.invalidateRemoteCacheIfHostChanged(host)
+			m.dialogState = DialogSCPConfirm
+			if len(m.remoteFiles) == 0 {
+				return m, m.navigateRemote(m.remotePath)
+			}
+		}
+	case "sync":
+		if host := m.getSelectedHost(); host != nil {
+			m.scpSelectedHost = host
+			m.invalidateRemoteCacheIfHostChanged(host)
+			m.syncLocalPath = m.localPath
+			m.syncRemotePath = m.remotePath
+			m.syncNoWatch = false
+			m.syncGitExclude = false
+			m.syncOptionsCursor = 0
+			m.syncExecCommand = ""
+			m.dialogState = DialogSyncConfirm
+			if len(m.remoteFiles) == 0 {
+				return m, m.navigateRemote(m.remotePath)
+			}
+		}
+	case "procs":
+		if len(m.activeProcesses) > 0 {
+			m.processSnapshot = make([]string, 0)
+			for id, proc := range m.activeProcesses {
+				if proc.Status == "running" || proc.Status == "watching" {
+					m.processSnapshot = append(m.processSnapshot, id)
+				}
+			}
+			if len(m.processSnapshot) > 0 {
+				m.processMarked = make(map[string]bool)
+				m.processListScroll = 0
+				m.dialogState = DialogSCPActiveProcesses
+			}
+		}
+	case "quit":
+		if err := m.hostCmd.SaveHostsToSSHConfig(); err != nil {
+			m.appendConsole(fmt.Sprintf("Warning: failed to save hosts to ssh config: %v", err))
+		}
+		return m, tea.Quit
+	case "add_host":
+		m.dialogState = DialogAddHost
+		m.dialogFocus = 0
+		m.dialogFields = map[string]string{
+			"name": "", "hostname": "", "user": "", "port": "22", "keypath": "",
+		}
+	case "edit_host":
+		if host := m.getSelectedHost(); host != nil {
+			m.editHostOriginalName = host.Name
+			m.dialogState = DialogEditHost
+			m.dialogFocus = 0
+			m.dialogFields = map[string]string{
+				"name": host.Name, "hostname": host.Hostname, "user": host.User,
+				"port": fmt.Sprintf("%d", host.Port), "keypath": host.KeyPath,
+			}
+		}
+	case "delete_host":
+		if m.focusedSection == 0 {
+			m.dialogState = DialogConfirmDelete
+		}
+	case "fetch":
+		if host := m.getSelectedHost(); host != nil {
+			m.remoteCacheHost = fmt.Sprintf("%s@%s:%d", host.User, host.Hostname, host.Port)
+			m.remoteCache.Clear()
+			return m, m.navigateRemote("/")
+		}
+	case "ssh_terminal":
+		if host := m.getSelectedHost(); host != nil {
+			sshTarget := fmt.Sprintf("%s@%s", host.User, host.Hostname)
+			sshArgs := "ssh"
+			if host.KeyPath != "" {
+				sshArgs += fmt.Sprintf(" -i %s", host.KeyPath)
+			}
+			if host.Port != 0 && host.Port != 22 {
+				sshArgs += fmt.Sprintf(" -p %d", host.Port)
+			}
+			sshArgs += " " + sshTarget
+			shellCmd := fmt.Sprintf(`echo -ne "\033]0;%s\007"; exec %s`, host.Name, sshArgs)
+			cmd := exec.Command("gnome-terminal", "--", "bash", "-c", shellCmd)
+			if err := cmd.Start(); err != nil {
+				m.appendConsole(fmt.Sprintf("Failed to open terminal: %v", err))
+			} else {
+				m.appendConsole(fmt.Sprintf("Opened SSH terminal to %s", sshTarget))
+			}
+		}
+	}
+
+	return m, nil
 }
 
 // createRemoteFolderCmd creates a folder on a remote host via SSH
