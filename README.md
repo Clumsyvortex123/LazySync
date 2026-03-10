@@ -1,67 +1,96 @@
 # lazysync
 
-A terminal UI tool for SSH file transfer and live synchronization, built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) and [Lip Gloss](https://github.com/charmbracelet/lipgloss).
+A simple terminal UI for SSH file transfer and live synchronization. Manages SSH hosts, transfers files with SCP, and runs continuous syncs with [livesync](https://github.com/bstollnitz/livesync) — all from one keyboard-driven interface.
+
+Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) and [Lip Gloss](https://github.com/charmbracelet/lipgloss).
 
 ## Features
 
-- **SSH Host Management** - Reads hosts from `~/.ssh/config`, add/delete hosts via TUI
-- **Host Reachability** - Automatic background connectivity checks with green/red status dots
-- **Host Filtering** - Tabbed view: All / Online / Offline hosts, switch with left/right arrows
-- **Splash Screen** - ASCII art launch screen while hosts are checked in the background
-- **Local File Browser** - Navigate local filesystem with scroll, icons, and file sizes
-- **Remote File Browser** - Browse remote filesystems over SSH with caching for instant revisits
-- **SCP Transfer** - Multi-stage dialog: select source/dest, mark files, confirm command, execute
-- **Live Sync** - Continuous file synchronization using [livesync](https://github.com/bstollnitz/livesync) with watch mode and git-exclude options
-- **Process Management** - Track running SCP/sync processes, batch kill via checkbox dialog
-- **Create Folders** - Create new directories on local or remote filesystems during transfers
-- **SSH Terminal** - Open gnome-terminal with SSH to any host, titled with the host name
+- **SSH Host Management** — Reads `~/.ssh/config` automatically, add/edit/delete hosts via TUI, saves new hosts back to `~/.ssh/config` on exit
+- **Host Reachability** — Background TCP connectivity checks with green/red status indicators
+- **Host Filtering** — Tabbed view (All / Online / Offline), switch with `←`/`→`
+- **Splash Screen** — ASCII art launch screen, auto-dismisses after 2 seconds
+- **Local & Remote File Browsers** — Navigate filesystems with scroll, icons, and file sizes; remote browsing via SSH with directory caching
+- **SCP Transfer** — Multi-stage dialog: choose source/dest, mark files, confirm command, execute in background
+- **Live Sync** — Continuous file synchronization with watch mode and git-exclude options
+- **Process Management** — Track running SCP/sync processes, batch kill via checkbox dialog
+- **Create Folders** — Create directories on local or remote filesystems during transfers
+- **SSH Terminal** — Open gnome-terminal with SSH to any host (`o` key)
+- **Clipboard Paste** — Ctrl+Shift+V paste support in all text input dialogs
 
-## Project Structure
+## Installation
 
-```
-lazysync/
-├── main.go                          # Entry point
-├── go.mod                           # Go module
-├── pkg/
-│   ├── app/app.go                   # Application bootstrap (Bubble Tea program)
-│   ├── config/
-│   │   ├── app_config.go            # Build metadata and paths
-│   │   └── user_config.go           # User-editable YAML config
-│   ├── commands/
-│   │   ├── host.go                  # SSH host reader + manager
-│   │   ├── file.go                  # Local filesystem operations
-│   │   ├── remote_fs.go             # Remote filesystem via SSH
-│   │   ├── scp.go                   # SCP file transfer
-│   │   ├── sync.go                  # Sync session tracking
-│   │   └── os.go                    # Shell execution wrapper
-│   └── gui/
-│       ├── bubbletea_model.go       # Model, Update, Init, all handlers
-│       ├── render_bubbletea.go      # View, all render/overlay functions
-│       ├── render_panels.go         # Panel content renderers (hosts, files, console)
-│       ├── styles_bubbletea.go      # TRON color theme and StyleBuilder
-│       ├── messages.go              # Bubble Tea message types
-│       ├── assets/logo.txt          # ASCII art splash logo
-│       └── presentation/            # Display formatting helpers
-│           ├── hosts.go
-│           ├── files.go
-│           └── syncs.go
-```
+### Prerequisites
 
-## Building
+- **Go 1.22+**
+- **ssh / scp** — For remote operations and file transfers (included with OpenSSH)
+- **livesync** — For continuous synchronization ([install from livesync repo](https://github.com/bstollnitz/livesync))
+- **gnome-terminal** — For opening SSH terminal sessions (optional, `o` key)
 
-Requirements:
-- Go 1.22+
+### Install Go
 
 ```bash
+# Ubuntu/Debian
+sudo apt-get install golang-go
+
+# macOS
+brew install go
+
+# Or download from https://golang.org/dl/
+```
+
+### Build from source
+
+```bash
+git clone https://github.com/yourusername/lazysync.git
+cd lazysync
 go mod download
 go build -o lazysync .
 ```
 
-## Running
+### Run
 
 ```bash
 ./lazysync
 ```
+
+Optionally move the binary to your PATH:
+
+```bash
+sudo mv lazysync /usr/local/bin/
+```
+
+## Quick Start
+
+1. Launch `./lazysync` — a splash screen appears, press any key or wait 2 seconds
+2. SSH hosts from `~/.ssh/config` appear in the top-left panel
+3. Hosts are checked for reachability in the background (green = online, red = offline)
+4. Use `←`/`→` to switch between All / Online / Offline tabs
+5. Use `Tab` to switch between panels, `↑`/`↓` to navigate
+
+### SCP Transfer
+
+1. Select a host, press `s` to open the SCP dialog
+2. Choose source (Local/Remote) and destination
+3. Mark files with `Space`, confirm with `Enter`
+4. Browse to destination path (press `n` to create a folder)
+5. Review the SCP command and press `Enter` to execute
+
+### Live Sync
+
+1. Select a host, press `l` to open the Live Sync dialog
+2. Browse and select local source path (press `t` to select folder)
+3. Browse and select remote destination path
+4. Toggle options: `no-watch` (one-shot) or `standard-git-exclude`
+5. Review and execute the livesync command
+
+### SSH Terminal
+
+Press `o` on any host to open a gnome-terminal with SSH (titled with the host name).
+
+### Managing Processes
+
+Press `z` to view all running processes. `Space` to mark, `.` to kill selected.
 
 ## Keybindings
 
@@ -69,13 +98,12 @@ go build -o lazysync .
 
 | Key | Action |
 |-----|--------|
-| `Tab` | Cycle focus between sections |
-| `Shift+Tab` | Cycle focus backwards |
-| `?` | Show keybindings help popup |
-| `q` / `Ctrl+C` | Quit |
-| `s` | Start SCP transfer dialog |
-| `l` | Start Live Sync dialog |
-| `z` | Show active processes (checkbox kill dialog) |
+| `Tab` / `Shift+Tab` | Cycle focus between panels |
+| `?` | Show keybindings help |
+| `q` / `Ctrl+C` | Quit (saves hosts to ssh config) |
+| `s` | Start SCP transfer |
+| `l` | Start Live Sync |
+| `z` | Show active processes |
 
 ### SSH Hosts Panel
 
@@ -83,53 +111,29 @@ go build -o lazysync .
 |-----|--------|
 | `←` / `→` | Switch between All / Online / Offline tabs |
 | `a` | Add new SSH host |
+| `e` | Edit selected host |
 | `d` | Delete selected host |
-| `f` | Fetch remote files for selected host (clears cache) |
-| `o` | Open SSH terminal to selected host (gnome-terminal) |
+| `f` | Fetch remote files (clears cache) |
+| `o` | Open SSH terminal |
 
-### Navigation (Hosts / File Browsers)
+### File Browsers
 
 | Key | Action |
 |-----|--------|
-| `Up` / `k` | Move selection up |
-| `Down` / `j` | Move selection down |
-| `Right` / `Enter` | Enter directory (file browsers) |
-| `Left` / `Backspace` | Go to parent directory (file browsers) |
+| `↑` / `k` | Move selection up |
+| `↓` / `j` | Move selection down |
+| `→` / `Enter` | Enter directory |
+| `←` / `Backspace` | Parent directory |
 
-### SCP Dialog Flow
-
-1. Confirm start
-2. Select source (Local/Remote)
-3. Select destination (Local/Remote)
-4. Mark source files (`Space` to toggle, `Enter` to confirm)
-5. Browse destination path (`n` to create folder, `Enter` to confirm)
-6. Confirm constructed command (`Enter` to execute)
-
-### Live Sync Dialog Flow
-
-1. Confirm start
-2. Browse local source path (`t` to select folder)
-3. Browse remote destination path (`t` to select folder, `n` to create folder)
-4. Toggle sync options (`Space` to toggle):
-   - `no-watch` - One-shot sync instead of continuous watching
-   - `standard-git-exclude` - Include git metadata, exclude rest of .git
-5. Confirm constructed livesync command (`Enter` to execute)
-
-### In All Dialogs
+### Dialogs
 
 | Key | Action |
 |-----|--------|
 | `b` | Go back to previous step |
 | `Esc` | Cancel dialog |
-
-### Active Processes Dialog
-
-| Key | Action |
-|-----|--------|
-| `Up` / `Down` | Navigate process list |
-| `Space` | Toggle process selection |
-| `.` | Kill all selected processes (SIGKILL) |
-| `z` / `Esc` | Close dialog |
+| `Ctrl+Shift+V` | Paste from clipboard |
+| `n` | Create new folder (in destination browsers) |
+| `.` | Kill selected processes (in process dialog) |
 
 ## Layout
 
@@ -153,6 +157,7 @@ go build -o lazysync .
 ### SSH Config
 
 Hosts are automatically read from `~/.ssh/config`:
+
 ```
 Host myserver
     HostName 192.168.1.100
@@ -161,24 +166,33 @@ Host myserver
     IdentityFile ~/.ssh/id_rsa
 ```
 
-### Supplementary Hosts
+New hosts added via the TUI are saved to `~/.config/lazysync/hosts.yml` during the session, and appended to `~/.ssh/config` when you quit.
 
-Manually added hosts are saved to `~/.config/lazysync/hosts.yml`.
+### User Config
+
+User preferences are stored in `~/.config/lazysync/config.yml`:
+
+```yaml
+default_local_path: /home/user
+default_remote_path: /home
+sync_debounce_ms: 500
+```
 
 ## Dependencies
 
-- [Bubble Tea](https://github.com/charmbracelet/bubbletea) - TUI framework
-- [Lip Gloss](https://github.com/charmbracelet/lipgloss) - Styling
-- [fsnotify](https://github.com/fsnotify/fsnotify) - File watching
-- [logrus](https://github.com/sirupsen/logrus) - Logging
+| Library | Purpose |
+|---------|---------|
+| [Bubble Tea](https://github.com/charmbracelet/bubbletea) | TUI framework |
+| [Lip Gloss](https://github.com/charmbracelet/lipgloss) | Terminal styling |
+| [fsnotify](https://github.com/fsnotify/fsnotify) | File system watching |
+| [logrus](https://github.com/sirupsen/logrus) | Structured logging |
+| [go-deadlock](https://github.com/sasha-s/go-deadlock) | Deadlock-protected mutexes |
+| [xdg](https://github.com/OpenPeeDeeP/xdg) | XDG Base Directory paths |
 
-## External Tools
+## Contributing
 
-- `scp` - For file transfers (system SSH)
-- `livesync` - For continuous synchronization (must be installed separately)
-- `ssh` - For remote file browsing and folder creation
-- `gnome-terminal` - For opening SSH terminal sessions (optional)
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-MIT
+MIT License. See [LICENSE](LICENSE) for details.

@@ -44,10 +44,12 @@ go build -o lazysync .
 - `Space` to mark processes, `.` to kill selected
 - Persistent syncs show as "watching", one-shot as "running"
 
-### Add/Delete Hosts
+### Add/Edit/Delete Hosts
 
 - Press `a` to add a new host manually
+- Press `e` to edit the selected host
 - Press `d` to delete the selected host
+- New hosts are saved to `~/.ssh/config` when you quit
 
 ### Fetch Remote Files
 
@@ -64,6 +66,7 @@ go build -o lazysync .
 | `l` | Live sync |
 | `z` | Active processes |
 | `a` | Add host |
+| `e` | Edit host |
 | `d` | Delete host |
 | `f` | Fetch remote files |
 | `o` | Open SSH terminal |
