@@ -1,6 +1,6 @@
 # lazysync
 
-A simple terminal UI for SSH file transfer and live synchronization. Manages SSH hosts, transfers files with SCP, and runs continuous syncs with [livesync](https://github.com/bstollnitz/livesync) — all from one keyboard-driven interface.
+A simple terminal UI for SSH file transfer and live synchronization. Manages SSH hosts, transfers files with SCP, and runs continuous syncs with [livesync](https://github.com/zauberzeug/livesync) — all from one keyboard-driven interface.
 
 Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) and [Lip Gloss](https://github.com/charmbracelet/lipgloss).
 
@@ -24,7 +24,7 @@ Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) and [Lip Glo
 
 - **Go 1.22+**
 - **ssh / scp** — For remote operations and file transfers (included with OpenSSH)
-- **livesync** — For continuous synchronization ([install from livesync repo](https://github.com/bstollnitz/livesync))
+- **livesync** — For continuous synchronization ([install from livesync repo](https://github.com/zauberzeug/livesync))
 - **gnome-terminal** — For opening SSH terminal sessions (optional, `o` key)
 
 ### Binary (recommended)
