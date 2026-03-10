@@ -799,7 +799,7 @@ func (m Model) convertSyncSessionsToItems(sessions []*commands.SyncSession) []Se
 			statusIcon = "🔴"
 		}
 		items[i] = SectionItem{
-			Label: fmt.Sprintf("%s %s (%.0f%%)", statusIcon, session.ID, session.LastSyncAt.UnixNano()/1e6),
+			Label: fmt.Sprintf("%s %s (%d)", statusIcon, session.ID, session.LastSyncAt.UnixNano()/1e6),
 			Data:  session,
 		}
 	}
