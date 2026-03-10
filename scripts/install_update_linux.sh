@@ -4,12 +4,12 @@
 # Usage:
 #   curl https://raw.githubusercontent.com/Clumsyvortex123/lazy-sync-scp/main/scripts/install_update_linux.sh | bash
 #
-# Set DIR to change install location (default: $HOME/.local/bin):
-#   DIR=/usr/local/bin curl ... | bash
+# Set DIR to change install location:
+#   DIR="$HOME/.local/bin" curl ... | bash
 
 set -e
 
-DIR="${DIR:-"$HOME/.local/bin"}"
+DIR="${DIR:-"/usr/local/bin"}"
 
 # map architecture
 ARCH=$(uname -m)
@@ -57,16 +57,15 @@ echo "Extracting..."
 tar xzf lazysync.tar.gz lazysync
 
 echo "Installing to ${DIR}..."
-install -Dm 755 lazysync -t "$DIR"
+if [ -w "$DIR" ]; then
+    install -Dm 755 lazysync -t "$DIR"
+else
+    echo "(requires sudo)"
+    sudo install -Dm 755 lazysync -t "$DIR"
+fi
 
 rm lazysync lazysync.tar.gz
 
 echo ""
 echo "lazysync ${GITHUB_LATEST_VERSION} installed to ${DIR}/lazysync"
-
-# Check if DIR is in PATH
-if ! echo "$PATH" | grep -q "$DIR"; then
-    echo ""
-    echo "NOTE: ${DIR} is not in your PATH. Add it with:"
-    echo "  echo 'export PATH=\"${DIR}:\$PATH\"' >> ~/.bashrc"
-fi
+echo "Run 'lazysync' from anywhere to start."

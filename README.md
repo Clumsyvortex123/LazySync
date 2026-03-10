@@ -35,10 +35,10 @@ Download a binary from the [releases page](https://github.com/Clumsyvortex123/la
 curl https://raw.githubusercontent.com/Clumsyvortex123/lazy-sync-scp/main/scripts/install_update_linux.sh | bash
 ```
 
-The script installs to `$HOME/.local/bin` by default. Change with `DIR`:
+The script installs to `/usr/local/bin` by default (uses sudo if needed). Change with `DIR`:
 
 ```bash
-DIR=/usr/local/bin curl https://raw.githubusercontent.com/Clumsyvortex123/lazy-sync-scp/main/scripts/install_update_linux.sh | bash
+DIR="$HOME/.local/bin" curl https://raw.githubusercontent.com/Clumsyvortex123/lazy-sync-scp/main/scripts/install_update_linux.sh | bash
 ```
 
 ### Build from source
