@@ -27,23 +27,27 @@ Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) and [Lip Glo
 - **livesync** — For continuous synchronization ([install from livesync repo](https://github.com/bstollnitz/livesync))
 - **gnome-terminal** — For opening SSH terminal sessions (optional, `o` key)
 
-### Install Go
+### Binary (recommended)
+
+Download a binary from the [releases page](https://github.com/Clumsyvortex123/lazy-sync-scp/releases), or install automatically:
 
 ```bash
-# Ubuntu/Debian
-sudo apt-get install golang-go
+curl https://raw.githubusercontent.com/Clumsyvortex123/lazy-sync-scp/main/scripts/install_update_linux.sh | bash
+```
 
-# macOS
-brew install go
+The script installs to `$HOME/.local/bin` by default. Change with `DIR`:
 
-# Or download from https://golang.org/dl/
+```bash
+DIR=/usr/local/bin curl https://raw.githubusercontent.com/Clumsyvortex123/lazy-sync-scp/main/scripts/install_update_linux.sh | bash
 ```
 
 ### Build from source
 
+Requires Go 1.22+:
+
 ```bash
-git clone https://github.com/yourusername/lazysync.git
-cd lazysync
+git clone https://github.com/Clumsyvortex123/lazy-sync-scp.git
+cd lazy-sync-scp
 go mod download
 go build -o lazysync .
 ```
@@ -52,12 +56,6 @@ go build -o lazysync .
 
 ```bash
 ./lazysync
-```
-
-Optionally move the binary to your PATH:
-
-```bash
-sudo mv lazysync /usr/local/bin/
 ```
 
 ## Quick Start
