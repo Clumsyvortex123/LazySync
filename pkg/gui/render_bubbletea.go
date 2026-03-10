@@ -1281,96 +1281,87 @@ func (m Model) renderCreateFolderDialogOverlay(mainView string) string {
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 }
 
-// renderHelpDialogOverlay renders the keybindings help popup
+// renderHelpDialogOverlay renders the navigable keybindings help popup.
 func (m Model) renderHelpDialogOverlay(mainView string) string {
-	titleStyle := NewStyle().CyanForeground().Bold()
 	sectionStyle := NewStyle().GreenForeground().Bold()
 	keyStyle := NewStyle().YellowForeground()
 	descStyle := NewStyle().CyanForeground()
+	selectedStyle := NewStyle().GreenBg().Bold()
+
+	entries := helpEntries()
+
+	// Compute visible height
+	visibleH := m.height - 10
+	if visibleH > len(entries) {
+		visibleH = len(entries)
+	}
+	if visibleH < 5 {
+		visibleH = 5
+	}
 
 	var lines []string
-	lines = append(lines, titleStyle.Render("Keybindings Reference"))
+	lines = append(lines, NewStyle().CyanForeground().Bold().Render("Keybindings Reference"))
 	lines = append(lines, "")
 
-	lines = append(lines, sectionStyle.Render("-- Global --"))
-	for _, e := range [][2]string{
-		{"Tab / Shift+Tab", "Cycle focus between panels"},
-		{"?", "Show this help"},
-		{"s", "Start SCP transfer dialog"},
-		{"l", "Start Live Sync dialog"},
-		{"z", "Show active processes"},
-		{"q / Ctrl+C", "Quit"},
-	} {
-		lines = append(lines, fmt.Sprintf("  %s  %s", keyStyle.Render(fmt.Sprintf("%-18s", e[0])), descStyle.Render(e[1])))
+	// Render visible entries with scroll
+	end := m.helpScroll + visibleH
+	if end > len(entries) {
+		end = len(entries)
 	}
-	lines = append(lines, "")
 
-	lines = append(lines, sectionStyle.Render("-- SSH Hosts Panel --"))
-	for _, e := range [][2]string{
-		{"Up/Down or j/k", "Navigate hosts"},
-		{"a", "Add new host"},
-		{"d", "Delete selected host"},
-		{"f", "Fetch remote files"},
-		{"o", "Open SSH terminal"},
-	} {
-		lines = append(lines, fmt.Sprintf("  %s  %s", keyStyle.Render(fmt.Sprintf("%-18s", e[0])), descStyle.Render(e[1])))
+	for i := m.helpScroll; i < end; i++ {
+		e := entries[i]
+
+		if e.IsHeader {
+			lines = append(lines, sectionStyle.Render(fmt.Sprintf("-- %s --", e.Desc)))
+			continue
+		}
+		if e.Key == "" && e.Desc == "" {
+			lines = append(lines, "")
+			continue
+		}
+
+		isCursor := i == m.helpCursor
+
+		keyStr := fmt.Sprintf("%-20s", e.Key)
+		descStr := e.Desc
+
+		if e.Action != "" {
+			// Selectable entry
+			if isCursor {
+				line := selectedStyle.Padding(0, 1).Render(fmt.Sprintf("▶ %s %s", keyStr, descStr))
+				lines = append(lines, line)
+			} else {
+				line := fmt.Sprintf("  %s  %s", keyStyle.Render(keyStr), descStyle.Render(descStr))
+				lines = append(lines, line)
+			}
+		} else {
+			// Non-selectable entry
+			line := fmt.Sprintf("  %s  %s", keyStyle.Render(keyStr), NewStyle().GreyForeground().Render(descStr))
+			lines = append(lines, line)
+		}
 	}
-	lines = append(lines, "")
 
-	lines = append(lines, sectionStyle.Render("-- File Browsers --"))
-	for _, e := range [][2]string{
-		{"Up/Down or j/k", "Navigate files"},
-		{"Right / Enter / l", "Enter directory"},
-		{"Left / Bksp / h", "Go to parent directory"},
-	} {
-		lines = append(lines, fmt.Sprintf("  %s  %s", keyStyle.Render(fmt.Sprintf("%-18s", e[0])), descStyle.Render(e[1])))
-	}
-	lines = append(lines, "")
-
-	lines = append(lines, sectionStyle.Render("-- SCP Dialog --"))
-	for _, e := range [][2]string{
-		{"Up/Down", "Navigate / toggle selection"},
-		{"Space", "Mark/unmark files"},
-		{"Enter", "Confirm current step"},
-		{"n", "Create new folder (dest)"},
-		{"b", "Go back one step"},
-		{"Esc", "Cancel"},
-	} {
-		lines = append(lines, fmt.Sprintf("  %s  %s", keyStyle.Render(fmt.Sprintf("%-18s", e[0])), descStyle.Render(e[1])))
-	}
-	lines = append(lines, "")
-
-	lines = append(lines, sectionStyle.Render("-- Live Sync Dialog --"))
-	for _, e := range [][2]string{
-		{"Left/Right", "Navigate directories"},
-		{"t", "Select highlighted folder"},
-		{"Space", "Toggle options"},
-		{"n", "Create new folder (remote)"},
-		{"b", "Go back one step"},
-		{"Esc", "Cancel"},
-	} {
-		lines = append(lines, fmt.Sprintf("  %s  %s", keyStyle.Render(fmt.Sprintf("%-18s", e[0])), descStyle.Render(e[1])))
-	}
-	lines = append(lines, "")
-
-	lines = append(lines, sectionStyle.Render("-- Active Processes --"))
-	for _, e := range [][2]string{
-		{"Up/Down", "Navigate process list"},
-		{"Space", "Mark/unmark process"},
-		{".", "Kill all marked processes"},
-		{"z / Esc", "Close"},
-	} {
-		lines = append(lines, fmt.Sprintf("  %s  %s", keyStyle.Render(fmt.Sprintf("%-18s", e[0])), descStyle.Render(e[1])))
+	// Scroll indicator
+	if len(entries) > visibleH {
+		lines = append(lines, "")
+		lines = append(lines, NewStyle().GreyForeground().Render(
+			fmt.Sprintf("  ↕ %d/%d", m.helpCursor+1, len(entries))))
 	}
 
 	lines = append(lines, "")
-	lines = append(lines, NewStyle().YellowForeground().Render("Press Esc to close"))
+	lines = append(lines, NewStyle().YellowForeground().Render("↑↓: Navigate  Enter: Execute  Esc: Close"))
 
 	dialog := strings.Join(lines, "\n")
 
+	boxH := len(lines) + 4
+	if boxH > m.height-2 {
+		boxH = m.height - 2
+	}
+
 	box := NewStyle().
-		Width(60).
-		Height(len(lines) + 2).
+		Width(64).
+		Height(boxH).
 		Border(lipgloss.RoundedBorder()).
 		BorderFg(ColorCyan).
 		Padding(1, 1).
