@@ -53,7 +53,7 @@ func (m Model) renderMainView() string {
 	footerStyle := lipgloss.NewStyle().
 		Width(W).
 		Foreground(lipgloss.Color(ColorCyan))
-	footer := footerStyle.Render(" Tab:Switch ↑↓:Nav ←→:Dir/Tab a:Add f:Fetch o:SSH s:SCP l:Sync z:Procs ?:Help q:Quit")
+	footer := footerStyle.Render(" Tab:Switch ↑↓:Nav ←→:Dir/Tab a:Add e:Edit f:Fetch o:SSH s:SCP l:Sync z:Procs ?:Help q:Quit")
 
 	// Body fills remaining height
 	bodyH := H - 2
@@ -289,6 +289,8 @@ func (m Model) renderDialog() string {
 	switch m.dialogState {
 	case DialogAddHost:
 		return m.renderAddHostDialogOverlay(mainView)
+	case DialogEditHost:
+		return m.renderEditHostDialogOverlay(mainView)
 	case DialogConfirmDelete:
 		return m.renderConfirmDialogOverlay(mainView)
 	case DialogSCPConfirm:
@@ -328,7 +330,7 @@ func (m Model) renderDialog() string {
 
 // renderAddHostDialogOverlay renders the add host dialog as an overlay
 func (m Model) renderAddHostDialogOverlay(mainView string) string {
-	fieldNames := []string{"Name", "Hostname", "User", "Port", "Key Path"}
+	fieldNames := []string{"Name", "Hostname/IP-addr", "User", "Port", "Key Path"}
 	fieldKeys := []string{"name", "hostname", "user", "port", "keypath"}
 
 	var formLines []string
@@ -364,7 +366,7 @@ func (m Model) renderAddHostDialogOverlay(mainView string) string {
 	}
 
 	formLines = append(formLines, "")
-	formLines = append(formLines, NewStyle().GreenForeground().Render("Enter: Save | Esc: Cancel | Tab: Next Field"))
+	formLines = append(formLines, NewStyle().GreenForeground().Render("Enter: Save | Esc: Cancel | Tab: Next | Ctrl+Shift+V: Paste"))
 
 	form := strings.Join(formLines, "\n")
 
@@ -377,6 +379,67 @@ func (m Model) renderAddHostDialogOverlay(mainView string) string {
 		Render(form)
 
 	// Center the dialog on screen
+	dialogOverlay := lipgloss.Place(
+		m.width,
+		m.height,
+		lipgloss.Center,
+		lipgloss.Center,
+		dialog,
+	)
+
+	return dialogOverlay
+}
+
+// renderEditHostDialogOverlay renders the edit host dialog as an overlay
+func (m Model) renderEditHostDialogOverlay(mainView string) string {
+	fieldNames := []string{"Name", "Hostname/IP-addr", "User", "Port", "Key Path"}
+	fieldKeys := []string{"name", "hostname", "user", "port", "keypath"}
+
+	var formLines []string
+	title := NewStyle().
+		MagentaForeground().
+		Bold().
+		Padding(0, 1).
+		Render("Edit SSH Host")
+	formLines = append(formLines, title)
+	formLines = append(formLines, "")
+
+	// Render form fields
+	for i, fieldName := range fieldNames {
+		fieldKey := fieldKeys[i]
+		value := m.dialogFields[fieldKey]
+		isFocused := m.dialogFocus == i
+
+		fieldStyle := NewStyle().CyanForeground()
+		if isFocused {
+			fieldStyle = NewStyle().GreenBg().Bold()
+		}
+
+		// Add cursor to focused field
+		display := value
+		if isFocused {
+			display = value + "█"
+		}
+
+		line := fieldStyle.
+			Padding(0, 1).
+			Render(fmt.Sprintf("%s: %s", fieldName, display))
+		formLines = append(formLines, line)
+	}
+
+	formLines = append(formLines, "")
+	formLines = append(formLines, NewStyle().GreenForeground().Render("Enter: Save | Esc: Cancel | Tab: Next | Ctrl+Shift+V: Paste"))
+
+	form := strings.Join(formLines, "\n")
+
+	dialog := NewStyle().
+		Width(60).
+		Height(15).
+		Border(lipgloss.RoundedBorder()).
+		BorderFg(ColorCyan).
+		Padding(1, 1).
+		Render(form)
+
 	dialogOverlay := lipgloss.Place(
 		m.width,
 		m.height,

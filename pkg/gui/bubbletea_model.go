@@ -182,6 +182,9 @@ type Model struct {
 	hostsPanelHeight int // content height available for hosts list
 	filePanelHeight  int // content height available for file listing in local/remote panels
 
+	// Edit host state
+	editHostOriginalName string // original name of host being edited
+
 	// Splash screen
 	showSplash bool
 
@@ -208,6 +211,7 @@ const (
 	DialogSyncSelectRemotePath
 	DialogSyncOptions
 	DialogSyncConfirmCommand
+	DialogEditHost     // edit existing SSH host
 	DialogCreateFolder // create folder inline during dest selection
 	DialogHelp         // keybindings help popup
 )
@@ -392,6 +396,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle main view input
 		switch msg.String() {
 		case "q", "ctrl+c":
+			// Save supplementary hosts to ~/.ssh/config before quitting
+			if err := m.hostCmd.SaveHostsToSSHConfig(); err != nil {
+				m.appendConsole(fmt.Sprintf("Warning: failed to save hosts to ssh config: %v", err))
+			}
 			return m, tea.Quit
 
 		case "esc":
@@ -520,6 +528,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Delete host
 			if m.focusedSection == 0 {
 				m.dialogState = DialogConfirmDelete
+			}
+			return m, nil
+
+		case "e":
+			// Edit existing host
+			if m.focusedSection == 0 {
+				if host := m.getSelectedHost(); host != nil {
+					m.editHostOriginalName = host.Name
+					m.dialogState = DialogEditHost
+					m.dialogFocus = 0
+					m.dialogFields = map[string]string{
+						"name":     host.Name,
+						"hostname": host.Hostname,
+						"user":     host.User,
+						"port":     fmt.Sprintf("%d", host.Port),
+						"keypath":  host.KeyPath,
+					}
+				}
 			}
 			return m, nil
 
@@ -1155,6 +1181,8 @@ func (m Model) handleDialogInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.dialogState {
 	case DialogAddHost:
 		return m.handleAddHostDialogInput(msg)
+	case DialogEditHost:
+		return m.handleEditHostDialogInput(msg)
 	case DialogConfirmDelete:
 		return m.handleConfirmDialogInput(msg)
 	case DialogSCPConfirm:
@@ -1266,10 +1294,91 @@ func (m Model) handleAddHostDialogInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	default:
-		// Regular character input
-		if len(msg.String()) == 1 {
+		// Handle clipboard paste (Ctrl+Shift+V) — Bubble Tea receives this as a bracketed paste
+		key := msg.String()
+		if msg.Type == tea.KeyRunes {
 			fieldName := fieldNames[m.dialogFocus]
-			m.dialogFields[fieldName] += msg.String()
+			m.dialogFields[fieldName] += string(msg.Runes)
+			return m, nil
+		}
+		// Regular character input
+		if len(key) == 1 {
+			fieldName := fieldNames[m.dialogFocus]
+			m.dialogFields[fieldName] += key
+		}
+		return m, nil
+	}
+}
+
+// handleEditHostDialogInput handles input for the Edit Host dialog
+func (m Model) handleEditHostDialogInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	fieldNames := []string{"name", "hostname", "user", "port", "keypath"}
+
+	switch msg.String() {
+	case "esc":
+		m.dialogState = DialogNone
+		m.dialogFields = make(map[string]string)
+		return m, nil
+
+	case "tab":
+		m.dialogFocus = (m.dialogFocus + 1) % len(fieldNames)
+		return m, nil
+
+	case "shift+tab":
+		m.dialogFocus = (m.dialogFocus - 1 + len(fieldNames)) % len(fieldNames)
+		return m, nil
+
+	case "enter":
+		// Save edited host
+		if m.dialogFields["name"] == "" {
+			m.currentError = "Host name cannot be empty"
+			return m, nil
+		}
+		if m.dialogFields["hostname"] == "" {
+			m.currentError = "Hostname cannot be empty"
+			return m, nil
+		}
+
+		port := 22
+		if m.dialogFields["port"] != "" {
+			fmt.Sscanf(m.dialogFields["port"], "%d", &port)
+		}
+
+		updatedHost := &commands.SSHHost{
+			Name:     m.dialogFields["name"],
+			Hostname: m.dialogFields["hostname"],
+			User:     m.dialogFields["user"],
+			Port:     port,
+			KeyPath:  m.dialogFields["keypath"],
+		}
+
+		err := m.hostCmd.UpdateHost(m.editHostOriginalName, updatedHost)
+		if err != nil {
+			m.currentError = fmt.Sprintf("Failed to update host: %v", err)
+		} else {
+			m.dialogState = DialogNone
+			return m, m.loadHostsSection()
+		}
+		return m, nil
+
+	case "backspace":
+		fieldName := fieldNames[m.dialogFocus]
+		if len(m.dialogFields[fieldName]) > 0 {
+			m.dialogFields[fieldName] = m.dialogFields[fieldName][:len(m.dialogFields[fieldName])-1]
+		}
+		return m, nil
+
+	default:
+		// Handle clipboard paste (Ctrl+Shift+V)
+		if msg.Type == tea.KeyRunes {
+			fieldName := fieldNames[m.dialogFocus]
+			m.dialogFields[fieldName] += string(msg.Runes)
+			return m, nil
+		}
+		key := msg.String()
+		if len(key) == 1 {
+			fieldName := fieldNames[m.dialogFocus]
+			m.dialogFields[fieldName] += key
 		}
 		return m, nil
 	}
@@ -2458,11 +2567,14 @@ func (m *Model) handleCreateFolderInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	default:
+		// Handle clipboard paste (Ctrl+Shift+V)
+		if msg.Type == tea.KeyRunes {
+			m.createFolderName += string(msg.Runes)
+			return m, nil
+		}
 		// Append typed character (single printable chars only)
 		ch := msg.String()
-		if len(ch) == 1 && ch != " " {
-			m.createFolderName += ch
-		} else if ch == " " {
+		if len(ch) == 1 {
 			m.createFolderName += ch
 		}
 		return m, nil

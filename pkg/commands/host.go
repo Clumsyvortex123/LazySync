@@ -99,6 +99,109 @@ func (c *SSHHostCommand) AddHost(host *SSHHost) error {
 	return nil
 }
 
+// UpdateHost updates an existing host in the supplementary hosts.yml file
+func (c *SSHHostCommand) UpdateHost(originalName string, updated *SSHHost) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if updated.Port == 0 {
+		updated.Port = 22
+	}
+
+	existing, err := loadSupplementaryHosts(c.appConfig.HostsFile)
+	if err != nil {
+		return fmt.Errorf("failed to load hosts file: %w", err)
+	}
+
+	found := false
+	for i, h := range existing {
+		if h.Name == originalName {
+			existing[i] = updated
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		// Host might be from ssh config — add it as supplementary
+		existing = append(existing, updated)
+	}
+
+	if err := saveSupplementaryHosts(c.appConfig.HostsFile, existing); err != nil {
+		return err
+	}
+
+	// Update in-memory list
+	for i, h := range c.hosts {
+		if h.Name == originalName {
+			c.hosts[i] = updated
+			return nil
+		}
+	}
+	// If not found in memory, append
+	c.hosts = append(c.hosts, updated)
+	return nil
+}
+
+// SaveHostsToSSHConfig writes supplementary hosts to ~/.ssh/config
+// (appends hosts that don't already exist in the file)
+func (c *SSHHostCommand) SaveHostsToSSHConfig() error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	supplementary, err := loadSupplementaryHosts(c.appConfig.HostsFile)
+	if err != nil || len(supplementary) == 0 {
+		return nil // nothing to save
+	}
+
+	sshConfigPath := filepath.Join(os.Getenv("HOME"), ".ssh", "config")
+
+	// Parse existing ssh config to find which hosts already exist
+	existingHosts, _ := parseSSHConfig(sshConfigPath)
+	existingNames := make(map[string]bool)
+	for _, h := range existingHosts {
+		existingNames[h.Name] = true
+	}
+
+	// Collect hosts that need to be appended
+	var toAppend []*SSHHost
+	for _, h := range supplementary {
+		if !existingNames[h.Name] {
+			toAppend = append(toAppend, h)
+		}
+	}
+
+	if len(toAppend) == 0 {
+		return nil
+	}
+
+	// Ensure .ssh directory exists
+	sshDir := filepath.Dir(sshConfigPath)
+	if err := os.MkdirAll(sshDir, 0700); err != nil {
+		return fmt.Errorf("failed to create .ssh directory: %w", err)
+	}
+
+	// Open file for appending (create if not exists)
+	f, err := os.OpenFile(sshConfigPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		return fmt.Errorf("failed to open ssh config: %w", err)
+	}
+	defer f.Close()
+
+	for _, h := range toAppend {
+		entry := fmt.Sprintf("\nHost %s\n    HostName %s\n    User %s\n    Port %d\n",
+			h.Name, h.Hostname, h.User, h.Port)
+		if h.KeyPath != "" {
+			entry += fmt.Sprintf("    IdentityFile %s\n", h.KeyPath)
+		}
+		if _, err := f.WriteString(entry); err != nil {
+			return fmt.Errorf("failed to write host %s: %w", h.Name, err)
+		}
+	}
+
+	return nil
+}
+
 // RemoveHost removes a host from the supplementary hosts.yml file
 func (c *SSHHostCommand) RemoveHost(name string) error {
 	c.mu.Lock()
