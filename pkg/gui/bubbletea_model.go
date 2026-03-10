@@ -89,6 +89,15 @@ func (c *remoteDirectoryCache) Clear() {
 	c.entries = make(map[string][]*commands.RemoteEntry)
 }
 
+// panelRect stores the screen bounds of a panel for mouse hit-testing.
+type panelRect struct {
+	x, y, w, h int
+}
+
+func (r panelRect) contains(mx, my int) bool {
+	return mx >= r.x && mx < r.x+r.w && my >= r.y && my < r.y+r.h
+}
+
 // Model is the main Bubble Tea model
 type Model struct {
 	// Dimensions
@@ -181,6 +190,14 @@ type Model struct {
 	// Cached panel dimensions (recalculated on resize)
 	hostsPanelHeight int // content height available for hosts list
 	filePanelHeight  int // content height available for file listing in local/remote panels
+
+	// Panel layout bounds for mouse hit-testing (recalculated on resize)
+	panelBounds [5]panelRect // 0=hosts, 1=local, 2=remote, 3=status, 4=console
+
+	// Mouse state
+	lastClickTime time.Time // for double-click detection
+	lastClickX    int
+	lastClickY    int
 
 	// Edit host state
 	editHostOriginalName string // original name of host being edited
@@ -574,6 +591,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.recalcPanelDimensions()
 		m.updateDetailPanel()
 		return m, nil
+
+	case tea.MouseMsg:
+		if m.showSplash {
+			m.showSplash = false
+			return m, nil
+		}
+		// Ignore mouse in dialogs
+		if m.dialogState != DialogNone {
+			return m, nil
+		}
+		return m.handleMouseInput(tea.MouseEvent(msg))
 
 	case HostsLoadedMsg:
 		m.sections[0].Items = m.convertHostsToItems(msg)
@@ -999,6 +1027,19 @@ func (m *Model) recalcPanelDimensions() {
 	if m.filePanelHeight < 1 {
 		m.filePanelHeight = 1
 	}
+
+	// Compute panel bounds for mouse hit-testing
+	// Layout: row 0 = header, then topRow, midRow, console, footer
+	leftW := m.width / 2
+	rightW := m.width - leftW
+	y := 1 // after header
+	m.panelBounds[0] = panelRect{x: 0, y: y, w: leftW, h: topH}           // hosts
+	m.panelBounds[3] = panelRect{x: leftW, y: y, w: rightW, h: topH}      // status
+	y += topH
+	m.panelBounds[1] = panelRect{x: 0, y: y, w: leftW, h: midH}           // local files
+	m.panelBounds[2] = panelRect{x: leftW, y: y, w: rightW, h: midH}      // remote files
+	y += midH
+	m.panelBounds[4] = panelRect{x: 0, y: y, w: m.width, h: consoleH}     // console
 }
 
 // Helper methods
@@ -2163,6 +2204,152 @@ func (m Model) handleConsoleInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focusPrev()
 		return m, nil
 	}
+	return m, nil
+}
+
+// handleMouseInput handles mouse clicks and scroll wheel events.
+func (m Model) handleMouseInput(msg tea.MouseEvent) (tea.Model, tea.Cmd) {
+	mx, my := msg.X, msg.Y
+
+	switch {
+	case msg.Button == tea.MouseButtonWheelUp:
+		return m.handleMouseScroll(mx, my, -1)
+	case msg.Button == tea.MouseButtonWheelDown:
+		return m.handleMouseScroll(mx, my, 1)
+	case msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress:
+		return m.handleMouseClick(mx, my)
+	}
+
+	return m, nil
+}
+
+// handleMouseClick focuses the clicked panel and selects the clicked item.
+// Double-click on a directory enters it.
+func (m Model) handleMouseClick(mx, my int) (tea.Model, tea.Cmd) {
+	// Detect double-click: same position within 400ms
+	now := time.Now()
+	isDoubleClick := now.Sub(m.lastClickTime) < 400*time.Millisecond &&
+		mx == m.lastClickX && my == m.lastClickY
+	m.lastClickTime = now
+	m.lastClickX = mx
+	m.lastClickY = my
+
+	// Map panel index → focusable section ID
+	// panelBounds: 0=hosts, 1=local, 2=remote, 3=status, 4=console
+	panelToSection := map[int]int{0: 0, 1: 1, 2: 2, 4: 5}
+
+	for panelIdx, sectionID := range panelToSection {
+		bounds := m.panelBounds[panelIdx]
+		if !bounds.contains(mx, my) {
+			continue
+		}
+
+		m.focusedSection = sectionID
+
+		// Compute content-relative Y (skip border top + title line)
+		contentY := my - bounds.y - 2
+		if panelIdx == 0 {
+			contentY-- // extra line for tab bar
+		}
+		if contentY < 0 {
+			return m, nil
+		}
+
+		switch panelIdx {
+		case 0: // hosts
+			clickedIdx := m.hostsScroll + contentY
+			items := m.filteredHostItems()
+			if clickedIdx < len(items) {
+				m.selectedInSection[0] = clickedIdx
+			}
+		case 1: // local files
+			clickedIdx := m.localScroll + contentY
+			if clickedIdx < len(m.localFiles) {
+				m.selectedInSection[1] = clickedIdx
+				if isDoubleClick && m.localFiles[clickedIdx].IsDir {
+					m.navigateLocalDirectory(m.localFiles[clickedIdx].Path)
+					return m, m.reloadLocalFiles()
+				}
+			}
+		case 2: // remote files
+			clickedIdx := m.remoteScroll + contentY
+			if clickedIdx < len(m.remoteFiles) {
+				m.selectedInSection[2] = clickedIdx
+				if isDoubleClick && m.remoteFiles[clickedIdx].IsDir {
+					return m, m.navigateRemote(m.remoteFiles[clickedIdx].Path)
+				}
+			}
+		}
+
+		m.updateDetailPanel()
+		return m, nil
+	}
+
+	return m, nil
+}
+
+// handleMouseScroll scrolls the panel under the cursor.
+// dir is -1 for scroll up, +1 for scroll down.
+func (m Model) handleMouseScroll(mx, my, dir int) (tea.Model, tea.Cmd) {
+	for panelIdx, bounds := range m.panelBounds {
+		if !bounds.contains(mx, my) {
+			continue
+		}
+
+		switch panelIdx {
+		case 0: // hosts
+			items := m.filteredHostItems()
+			m.hostsScroll += dir
+			if m.hostsScroll < 0 {
+				m.hostsScroll = 0
+			}
+			maxScroll := len(items) - m.hostsPanelHeight
+			if maxScroll < 0 {
+				maxScroll = 0
+			}
+			if m.hostsScroll > maxScroll {
+				m.hostsScroll = maxScroll
+			}
+		case 1: // local files
+			m.localScroll += dir
+			if m.localScroll < 0 {
+				m.localScroll = 0
+			}
+			maxScroll := len(m.localFiles) - m.filePanelHeight
+			if maxScroll < 0 {
+				maxScroll = 0
+			}
+			if m.localScroll > maxScroll {
+				m.localScroll = maxScroll
+			}
+		case 2: // remote files
+			m.remoteScroll += dir
+			if m.remoteScroll < 0 {
+				m.remoteScroll = 0
+			}
+			maxScroll := len(m.remoteFiles) - m.filePanelHeight
+			if maxScroll < 0 {
+				maxScroll = 0
+			}
+			if m.remoteScroll > maxScroll {
+				m.remoteScroll = maxScroll
+			}
+		case 4: // console
+			m.consoleScroll += dir
+			if m.consoleScroll < 0 {
+				m.consoleScroll = 0
+			}
+			if m.consoleScroll > len(m.consoleLines)-1 {
+				m.consoleScroll = len(m.consoleLines) - 1
+			}
+			if m.consoleScroll < 0 {
+				m.consoleScroll = 0
+			}
+		}
+
+		return m, nil
+	}
+
 	return m, nil
 }
 
